@@ -1482,7 +1482,8 @@ class MuseEngine:
 
         t_sent = time.time()
         deadline = t_sent + timeout
-        first_token_deadline = min(deadline, t_sent + 40.0)
+        # 首字等待上限：VM 冷啟動或長提示時 40 秒常不夠；可用 MUSE_FIRST_TOKEN_TIMEOUT 調整（秒）。
+        first_token_deadline = min(deadline, t_sent + float(os.environ.get("MUSE_FIRST_TOKEN_TIMEOUT", "150")))
         text = StreamText()
         last, stable = None, 0
         got_first = False
