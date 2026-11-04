@@ -53,7 +53,7 @@ from engine import (ESSENTIAL_COOKIES, MAX_REFERENCE_IMAGE_BYTES,
                     MAX_REFERENCE_IMAGES, MAX_REFERENCE_TOTAL_BYTES,
                     REFERENCE_MIME_EXT, MuseAuthError, MuseEngine, MuseGenerationError,
                     MuseModelRefusalError, RefImageSafetyError, reference_kind)
-from engine import MuseProxyError
+from engine import BracketGuard, MuseProxyError
 from store import Store, account_expiry, min_expiry
 from proxy import normalize_server, request_proxy_context
 
@@ -370,8 +370,13 @@ def safe_chat_stream(cookies: dict, prompt: str, expires: dict | None,
                      timeout: int, account_id: str | None, final_only: bool = False):
     """在独立线程中执行 chat_stream 并持有 GEN_LOCK，通过 Queue 往外吐。
     无论下游客户端何时断连、异常或超时，stop_event + finally 块保证 100% 立即释放 GEN_LOCK，绝不死锁。
-    若首字前遇到单账号 VM 卡死或会话异常，自动切换下一个健康账号重试一次。"""
+    若首字前遇到单账号 VM 卡死或会话异常，自动切换下一个健康账号重试一次。
+
+    提示词里的【】会换成替代括号再送出，回覆换回【】，见 engine.BracketGuard；
+    设 MUSE2API_PROTECT_BRACKETS=0 可关闭。"""
     import queue
+    guard = BracketGuard(prompt, enabled=os.environ.get("MUSE2API_PROTECT_BRACKETS", "1") != "0")
+    prompt = guard.outgoing(prompt)
     q = queue.Queue(maxsize=100)
     stop_event = threading.Event()
 
@@ -461,7 +466,7 @@ def safe_chat_stream(cookies: dict, prompt: str, expires: dict | None,
         while True:
             kind, val = q.get()
             if kind == "data":
-                yield val
+                yield guard.incoming(val)
             elif kind == "error":
                 raise val
             else:

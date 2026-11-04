@@ -83,5 +83,30 @@ class ChatTests(unittest.TestCase):
         self.assertEqual(''.join(fake_engine(frames).chat_stream({}, 'prompt')), frames[-1])
 
 
+class BracketGuardTests(unittest.TestCase):
+    """muse.ai 會把【…】當引用標記刪掉；送出前換成替代括號，回覆再換回來。"""
+
+    def test_brackets_travel_as_lookalikes_and_come_back(self):
+        prompt = '翻譯：俺は【影渡り】を発動した。\n【スキル【暗殺】が発動しました】'
+        guard = m.BracketGuard(prompt)
+        sent = guard.outgoing(prompt)
+        self.assertNotIn('【', sent)
+        self.assertIn('〖影渡り〗', sent)
+        self.assertEqual(guard.incoming('我發動了〖影渡者〗。\n〖技能〖暗殺〗發動了〗'), '我發動了【影渡者】。\n【技能【暗殺】發動了】')
+
+    def test_a_pair_the_prompt_already_uses_is_skipped(self):
+        prompt = '〖原有〗與【技能】'
+        guard = m.BracketGuard(prompt)
+        self.assertEqual(guard.outgoing(prompt), '〖原有〗與〘技能〙')
+        self.assertEqual(guard.incoming('〖原有〗與〘技能〙'), '〖原有〗與【技能】')
+
+    def test_nothing_changes_without_brackets_or_when_switched_off(self):
+        for guard, prompt in ((m.BracketGuard('普通的文字'), '普通的文字'), (m.BracketGuard('【技能】', enabled=False), '【技能】')):
+            self.assertEqual(guard.outgoing(prompt), prompt)
+            self.assertEqual(guard.incoming('〖x〗'), '〖x〗')
+        crowded = '【a】〖b〗〘c〙〚d〛'
+        self.assertEqual(m.BracketGuard(crowded).outgoing(crowded), crowded)
+
+
 if __name__ == '__main__':
     unittest.main()

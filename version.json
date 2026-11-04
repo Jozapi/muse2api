@@ -1,8 +1,9 @@
 {
-  "version": "1.6.8",
+  "version": "1.6.9",
   "updated_at": "2026-11-04",
   "repo": "https://github.com/Jozapi/muse2api",
   "highlights": [
+    "Jozapi fork：保住【】裡的文字。muse.ai 會把【…】當成引用標記刪掉，提示詞改用同形括號〖〗送出，回覆再換回【】（MUSE2API_PROTECT_BRACKETS=0 可關閉）。",
     "Jozapi fork：修正對話回覆在 muse.ai 重新渲染時被重複輸出（截斷的一份 + 完整的一份），非串流請求改回傳最終文字，串流不再整段重送。",
     "更新檢測與一鍵升級改為追蹤 Jozapi/muse2api，避免升級時被上游覆蓋。",
     "修复 Muse 新版无 overlay/form 输入区的附件定位和确认，兼容旧版并排除历史聊天附件。",
@@ -12,6 +13,7 @@
     "浏览器插件继续使用 1.0.2、油猴脚本 1.1.2；仍使用旧插件的用户必须手动升级并重新加载，每个浏览器个人资料分别操作。"
   ],
   "highlights_en": [
+    "Jozapi fork: keep text inside 【】. muse.ai deletes 【…】 as citation markers; prompts now travel with look-alike brackets 〖〗 and replies get 【】 back (MUSE2API_PROTECT_BRACKETS=0 turns it off).",
     "Jozapi fork: chat replies are no longer duplicated when muse.ai re-renders them (a cut-off copy followed by the full one). Non-streaming requests return the final text; streaming never resends the whole answer.",
     "Update checks and one-click upgrades follow Jozapi/muse2api so an upgrade cannot overwrite the fix.",
     "Fix attachment selection and confirmation for the new Muse composer without an overlay/form, retaining old-layout support and excluding chat history.",

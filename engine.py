@@ -246,6 +246,33 @@ class StreamText:
         return piece
 
 
+class BracketGuard:
+    """保住【】里的文字。
+
+    muse.ai 在回答结束时把形如【…】的片段当作引用标记整段删掉（页面数据本身就没有了，
+    不只是不显示），小说里的【技能名】、【系统讯息】因此消失。送出前把提示词里的【】换成
+    提示词没用到的同形括号（〖〗、〘〙或〚〛），模型会照样使用；回覆再换回【】。
+    提示词没有【】、或三组替代括号都已被使用时，不做任何替换。
+    """
+
+    PAIRS = (("〖", "〗"), ("〘", "〙"), ("〚", "〛"))
+
+    def __init__(self, prompt: str, enabled: bool = True):
+        self.pair = None
+        if enabled and ("【" in prompt or "】" in prompt):
+            self.pair = next((p for p in self.PAIRS if p[0] not in prompt and p[1] not in prompt), None)
+
+    def outgoing(self, prompt: str) -> str:
+        if not self.pair:
+            return prompt
+        return prompt.replace("【", self.pair[0]).replace("】", self.pair[1])
+
+    def incoming(self, text: str) -> str:
+        if not self.pair:
+            return text
+        return text.replace(self.pair[0], "【").replace(self.pair[1], "】")
+
+
 class MuseAuthError(RuntimeError):
     pass
 
