@@ -1,8 +1,10 @@
 {
-  "version": "1.6.7",
-  "updated_at": "2026-11-03",
-  "repo": "https://github.com/czg86389-hub/muse2api",
+  "version": "1.6.8",
+  "updated_at": "2026-11-04",
+  "repo": "https://github.com/Jozapi/muse2api",
   "highlights": [
+    "Jozapi fork：修正對話回覆在 muse.ai 重新渲染時被重複輸出（截斷的一份 + 完整的一份），非串流請求改回傳最終文字，串流不再整段重送。",
+    "更新檢測與一鍵升級改為追蹤 Jozapi/muse2api，避免升級時被上游覆蓋。",
     "修复 Muse 新版无 overlay/form 输入区的附件定位和确认，兼容旧版并排除历史聊天附件。",
     "新增视频、音频、PDF/Word 参考素材：最多 10 个，单个 40 MiB、合计 100 MiB；MP4/MOV/3GP/WebM 必须含有效时长且不超过 120 秒。",
     "混合素材提示词支持 [图N]/[视频N]/[音频N]/[文档N] 对照，避免强制第一张图片为起始帧而忽略视频参考。",
@@ -10,6 +12,8 @@
     "浏览器插件继续使用 1.0.2、油猴脚本 1.1.2；仍使用旧插件的用户必须手动升级并重新加载，每个浏览器个人资料分别操作。"
   ],
   "highlights_en": [
+    "Jozapi fork: chat replies are no longer duplicated when muse.ai re-renders them (a cut-off copy followed by the full one). Non-streaming requests return the final text; streaming never resends the whole answer.",
+    "Update checks and one-click upgrades follow Jozapi/muse2api so an upgrade cannot overwrite the fix.",
     "Fix attachment selection and confirmation for the new Muse composer without an overlay/form, retaining old-layout support and excluding chat history.",
     "Add video, audio and PDF/Word references: up to 10 files, 40 MiB each, 100 MiB total. MP4/MOV/3GP/WebM require readable positive duration metadata of no more than 120 seconds.",
     "Map mixed-reference markers to attachment order without forcing the first image to be the opening frame when video/audio references are present.",

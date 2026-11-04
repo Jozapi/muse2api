@@ -210,6 +210,42 @@ def _webm_duration(data: bytes) -> float | None:
 ESSENTIAL_COOKIES = ("hatch_sess",)
 
 
+class StreamText:
+    """把助手气泡的「整段快照」转成只增不改的增量文本。
+
+    muse.ai 一边生成一边重新渲染 Markdown：例如单独的 ``[`` 在确定不是链接前会先隐藏，
+    引号、破折号、列表也可能在后续字到达时改写。于是新快照不一定以已发出的文字开头。
+    旧写法在这种情况下把整段快照再发一次，非流式请求拼起来就成了
+    「截断的第一份 + 完整的第二份」，JSON 解析失败、小说译文整段重复。
+
+    这里只发出到最后一个换行为止的文字（正在写的那一行最容易被改写），
+    生成结束后再补上剩下的部分；若连已发出的文字都被改写，只补发其后的新内容，
+    绝不重发整段。非流式请求则直接使用最终快照（见 ``chat_stream(final_only=True)``）。
+    """
+
+    def __init__(self):
+        self.sent = ""
+        self.latest = ""
+        self.rewrites = 0
+
+    def update(self, snapshot: str) -> str:
+        self.latest = snapshot
+        return self._emit(snapshot[:snapshot.rfind("\n") + 1])
+
+    def finish(self) -> str:
+        return self._emit(self.latest)
+
+    def _emit(self, target: str) -> str:
+        if target.startswith(self.sent):
+            piece = target[len(self.sent):]
+        else:
+            # 已发出的文字收不回来：只补上超出已发长度的部分。
+            self.rewrites += 1
+            piece = target[len(self.sent):] if len(target) > len(self.sent) else ""
+        self.sent += piece
+        return piece
+
+
 class MuseAuthError(RuntimeError):
     pass
 
@@ -1432,8 +1468,12 @@ class MuseEngine:
 
     def chat_stream(self, cookies: dict, prompt: str, expires: dict | None = None,
                     timeout: int | None = None, account_id: str | None = None,
-                    stop_event=None):
-        """发一条消息，流式 yield 增量文本。"""
+                    stop_event=None, final_only: bool = False):
+        """发一条消息，流式 yield 增量文本。
+
+        final_only=True 时不发增量，只在生成结束后 yield 一次最终的完整文本，
+        供非流式请求使用：渲染中途的改写不会混进回覆。
+        """
         timeout = int(timeout or getattr(self.cfg, "chat_timeout", 300))
         self.ensure_page(cookies, expires, account_id=account_id)
         self.reset_thread(for_chat=True)
@@ -1443,10 +1483,11 @@ class MuseEngine:
         t_sent = time.time()
         deadline = t_sent + timeout
         first_token_deadline = min(deadline, t_sent + 40.0)
-        sent, last, stable = "", None, 0
+        text = StreamText()
+        last, stable = None, 0
         got_first = False
 
-        # 1. 等待助手生成并开始吐字（高频 60ms 采样，捕获到首批增量文字瞬间 yield 出去）
+        # 1. 等待助手生成并开始吐字（高频 60ms 采样）
         while time.time() < first_token_deadline:
             if stop_event is not None and stop_event.is_set():
                 return
@@ -1461,19 +1502,17 @@ class MuseEngine:
                     if "Still sending" in tail or "Connecting..." in tail:
                         raise MuseGenerationError("云端 VM 连接超时 (Still sending)")
                 continue
-
-            delta = cur[len(sent):] if cur.startswith(sent) else cur
-            if delta:
-                sent = cur
-                yield delta
-                last = cur
-                got_first = True
-                break
+            got_first = True
+            last = cur
+            piece = text.update(cur)
+            if piece and not final_only:
+                yield piece
+            break
 
         if not got_first:
             raise MuseGenerationError("等待助手首字响应超时")
 
-        # 2. 持续捕获增量文本
+        # 2. 持续捕获，直到生成结束
         while time.time() < deadline:
             if stop_event is not None and stop_event.is_set():
                 return
@@ -1483,29 +1522,30 @@ class MuseEngine:
                 continue
 
             if cur != last:
-                delta = cur[len(sent):] if cur.startswith(sent) else cur
-                if delta:
-                    sent = cur
-                    yield delta
+                piece = text.update(cur)
+                if piece and not final_only:
+                    yield piece
                 last, stable = cur, 0
-            else:
-                stable += 1
-                # Stop 按钮消失说明前端生成彻底结束，连续 3 次（约 0.18s）无新文本即正常退出
-                if not has_stop and stable >= 3:
-                    return
-                # Stop 按钮仍在时绝不过早截断（模型思考、代码块或网络抖动），允许等待至 stable >= 80（约 5s）防卡死
-                if has_stop and stable >= 80:
-                    return
+                continue
+            stable += 1
+            # Stop 按钮消失说明前端生成彻底结束，连续 3 次（约 0.18s）无新文本即正常退出；
+            # Stop 按钮仍在时绝不过早截断（模型思考、代码块或网络抖动），允许等待至 stable >= 80（约 5s）防卡死
+            if (not has_stop and stable >= 3) or (has_stop and stable >= 80):
+                rest = text.latest if final_only else text.finish()
+                if text.rewrites:
+                    log.info("回覆在生成中被改写 %d 次；%s", text.rewrites,
+                             "已改用最终文本" if final_only else "只补发新增部分，未重发整段")
+                if rest:
+                    yield rest
+                return
 
         raise MuseGenerationError("等待助手回复超时")
 
     def chat(self, cookies: dict, prompt: str, expires: dict | None = None,
              timeout: int | None = None, account_id: str | None = None) -> str:
         """发一条消息，返回完整回复文本（非流式）。"""
-        out = ""
-        for chunk in self.chat_stream(cookies, prompt, expires, timeout, account_id=account_id):
-            out += chunk
-        return out
+        return "".join(self.chat_stream(cookies, prompt, expires, timeout,
+                                        account_id=account_id, final_only=True))
 
     def extract_bytes(self, src: str, expect: str = "image", retries: int = 4):
         last = "未知"
