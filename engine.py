@@ -273,6 +273,55 @@ class BracketGuard:
         return text.replace(self.pair[0], "【").replace(self.pair[1], "】")
 
 
+# muse.ai 偶尔会把失败渲染成看起来正常的助手气泡文字（而不是 HTTP 错误），
+# 必须当作生成失败处理，否则会把这句话当 200 回覆吐给调用方。
+# 可用 MUSE_CHAT_ERROR_PATTERNS（用 "|" 分隔）整体覆盖默认列表。
+# 不含 "Please try again"：这句太常见，会命中翻译/引用里原样出现的同一句英文
+# （例如小说台词、翻译说明），命中了正常回覆也会被误判为失败。
+_DEFAULT_CHAT_ERROR_PATTERNS = ("Sorry, I ran into a problem",)
+
+
+def _chat_error_patterns() -> tuple:
+    raw = os.environ.get("MUSE_CHAT_ERROR_PATTERNS", "").strip()
+    if not raw:
+        return _DEFAULT_CHAT_ERROR_PATTERNS
+    return tuple(p.strip() for p in raw.split("|") if p.strip())
+
+
+def _match_chat_error(text: str, patterns) -> str | None:
+    """只有在错误串出现在"开头"或"结尾且全文很短"时才判定为失败提示，
+    避免长回覆里引用/翻译了这句话（不在开头也不是结尾）被误判。"""
+    stripped = (text or "").strip()
+    if not stripped:
+        return None
+    last_line = stripped.splitlines()[-1].strip()
+    for p in patterns:
+        if stripped.startswith(p):
+            return p
+        if last_line.startswith(p) and (len(stripped) < 300 or last_line == p):
+            return p
+    return None
+
+
+# 计划性短句的特征：以"我將/我会/I'll/Let me"等开头、且很短——真的回覆到这里
+# 就卡住不动通常意味着只拿到了"打算怎么做"而没有正文。但光凑开头词太容易误判
+# 正常的短回覆（"I'll be there tomorrow."、"我會回來的。"），所以还要求命中一个
+# "在讲规范/技能/文件"之类的元话题关键词才判定为计划句。
+_PLANNING_LINE_RE = re.compile(r"^(我將|我会|我會|I'll|I will|Let me|讓我|让我)")
+_PLANNING_META_RE = re.compile(
+    r"(規範|规范|skill|技能|翻譯偏好|翻译偏好|檔案|文件|file|guideline|instruction"
+    r"|指示|先確認|先确认|read|讀取|读取|check)",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_planning_line(text: str) -> bool:
+    stripped = (text or "").strip()
+    if not stripped or len(stripped) >= 120 or not _PLANNING_LINE_RE.match(stripped):
+        return False
+    return bool(_PLANNING_META_RE.search(stripped))
+
+
 class MuseAuthError(RuntimeError):
     pass
 
@@ -766,11 +815,15 @@ class MuseEngine:
 
     def reset_thread(self, for_chat: bool = False):
         """关闭残留弹窗并确保处于干净会话且 WebSocket 已就绪。
-        对于纯文本对话（for_chat=True），若当前热页面无附件、无卡死且气泡数较少，直接复用现有热连接以实现 2s 级秒回。"""
+        对于纯文本对话（for_chat=True）：默认（MUSE_CHAT_FRESH_THREAD=1）每次请求都另开新会话，
+        避免多个请求堆叠在同一个 thread 里造成上下文串话、旧回覆被误判为新回覆；
+        设 MUSE_CHAT_FRESH_THREAD=0 恢复旧行为——只要气泡数较少就直接复用现有热连接以求 2s 级秒回。"""
         if not self.page:
             return
+        fresh_chat = os.environ.get("MUSE_CHAT_FRESH_THREAD", "1").strip() != "0"
+        attempted_chat_nav = False
         try:
-            needs_nav = self.page.js("""(function(forChat){
+            needs_nav = self.page.js("""(function(forChat, freshChat){
                 var d = document.querySelector('[role="dialog"]');
                 if (d) {
                     var b = d.querySelector('button[aria-label*="close" i], button');
@@ -785,14 +838,17 @@ class MuseEngine:
                 var bodyTxt = document.body ? (document.body.innerText || '') : '';
                 var hasStuck = bodyTxt.indexOf('Still sending') !== -1 || bodyTxt.indexOf('Connecting...') !== -1;
                 if (hasStop || hasStuck || hasAtts) return true;
-                if (forChat) {
+                if (forChat && !freshChat) {
                     return bubbleCount >= 24;
                 }
                 return (window.location.pathname !== '/thread/new') || bubbleCount > 0;
-            })(%s)""" % ("true" if for_chat else "false"))
+            })(%s, %s)""" % ("true" if for_chat else "false", "true" if fresh_chat else "false"))
             if needs_nav:
+                if for_chat:
+                    attempted_chat_nav = True
                 self.page.send("Page.navigate", {"url": "https://muse.ai/thread/new"})
                 t_end = time.time() + 10.0
+                ready = False
                 while time.time() < t_end:
                     time.sleep(0.08)
                     ready = self.page.js("""(function(){
@@ -803,7 +859,22 @@ class MuseEngine:
                     if ready:
                         break
                 self._wait_ws_ready(self.page, timeout=12.0)
-        except Exception:
+                if for_chat and not ready:
+                    # 页面可能仍停留在旧 thread（旧气泡残留）：不能悄悄继续发消息，
+                    # 否则新请求会堆进旧会话，被误判为上一轮的回覆。宁可失败让上层重试。
+                    landed = self.page.js("""(function(){
+                        return window.location.pathname === '/thread/new'
+                            || document.querySelectorAll('div[class*="hatch-chat-groupable-bubble"]').length === 0;
+                    })()""")
+                    if not landed:
+                        raise MuseGenerationError("新建会话导航未完成（仍停留在旧会话），终止并重试")
+        except MuseGenerationError:
+            raise
+        except Exception as exc:
+            if attempted_chat_nav:
+                # 对话场景下另开新会话时出异常（Page.navigate 或就位检查失败）：
+                # 不能悄悄继续发消息，否则会堆进旧会话造成串话，宁可报错让上层重试。
+                raise MuseGenerationError(f"新建会话导航失败: {exc}") from exc
             pass
 
     def ensure_page(self, cookies: dict, expires: dict | None = None, account_id: str | None = None):
@@ -1500,74 +1571,183 @@ class MuseEngine:
 
         final_only=True 时不发增量，只在生成结束后 yield 一次最终的完整文本，
         供非流式请求使用：渲染中途的改写不会混进回覆。
+
+        完成判定：Stop 按钮还在（助手仍在计划/调用工具/吐字）时绝不提前结束——
+        只受下面的总体 timeout 约束，防止把"我將先確認規範…"之类的计划性中间话
+        当成最终回覆提前返回。Stop 按钮消失后，还要求气泡数与文字都稳定
+        MUSE_CHAT_STABLE_SECONDS 秒（默认 3.0s）才算结束，这样计划话术之后另开
+        一个新气泡才出现的最终答案也能被等到、取用的是这轮最后一个气泡。
+
+        代理气泡数（``cnt``，见 ``_poll_chat``）一旦变化就代表出现了新消息：
+        旧消息的 StreamText 绝不能拿新气泡的文字去切片（否则会把"计划句 + 被
+        截断的正式回覆"拼出来）。同一气泡内文字长度未超过
+        MUSE_STREAM_HOLDBACK_CHARS（默认 200）之前先不吐出任何增量——短的计划句、
+        muse.ai 把失败渲染成的简短气泡都应该先完成分类，不让 app.py 已经吐出内容
+        而放弃切号重试。
+
+        已知限制：若计划句本身是多行且长度一次性就超过 MUSE_STREAM_HOLDBACK_CHARS
+        （例如很长的多步计划列表），在它被规划性检测识别出来之前就可能已经按阈值
+        吐给了调用方；这种情况下 app.py 无法再切号重试。未在本次修复范围内处理，
+        需要时可考虑把 holdback 判定也纳入换行计数或改用更保守的阈值。
         """
         timeout = int(timeout or getattr(self.cfg, "chat_timeout", 300))
-        self.ensure_page(cookies, expires, account_id=account_id)
-        self.reset_thread(for_chat=True)
-        base_agent, base_text, _ = self._poll_chat()
-        self._send(prompt)
-
         t_sent = time.time()
-        deadline = t_sent + timeout
-        # 首字等待上限：VM 冷啟動或長提示時 40 秒常不夠；可用 MUSE_FIRST_TOKEN_TIMEOUT 調整（秒）。
-        first_token_deadline = min(deadline, t_sent + float(os.environ.get("MUSE_FIRST_TOKEN_TIMEOUT", "150")))
+        stage = "ensure_page"
+        outcome = "ok"
+        base_agent = 0
+        final_cnt = 0
         text = StreamText()
-        last, stable = None, 0
-        got_first = False
+        try:
+            self.ensure_page(cookies, expires, account_id=account_id)
+            stage = "reset_thread"
+            self.reset_thread(for_chat=True)
+            stage = "poll_baseline"
+            base_agent, base_text, _ = self._poll_chat()
+            final_cnt = base_agent
+            stage = "send"
+            self._send(prompt)
 
-        # 1. 等待助手生成并开始吐字（高频 60ms 采样）
-        while time.time() < first_token_deadline:
-            if stop_event is not None and stop_event.is_set():
-                return
-            time.sleep(0.06)
-            cnt, cur, has_stop = self._poll_chat()
-            if not cur or (cnt <= base_agent and cur == base_text):
-                if time.time() - t_sent > 14.0:
-                    try:
-                        tail = self.page.js("document.body.innerText.slice(-500)") or ""
-                    except Exception:
-                        tail = ""
-                    if "Still sending" in tail or "Connecting..." in tail:
-                        raise MuseGenerationError("云端 VM 连接超时 (Still sending)")
-                continue
-            got_first = True
-            last = cur
-            piece = text.update(cur)
-            if piece and not final_only:
-                yield piece
-            break
+            t_sent = time.time()
+            deadline = t_sent + timeout
+            # 首字等待上限：VM 冷啟動或長提示時 40 秒常不夠；可用 MUSE_FIRST_TOKEN_TIMEOUT 調整（秒）。
+            first_token_deadline = min(deadline, t_sent + float(os.environ.get("MUSE_FIRST_TOKEN_TIMEOUT", "150")))
+            stable_seconds = float(os.environ.get("MUSE_CHAT_STABLE_SECONDS", "3.0"))
+            holdback_chars = int(os.environ.get("MUSE_STREAM_HOLDBACK_CHARS", "200"))
+            planning_grace = float(os.environ.get("MUSE_CHAT_PLANNING_GRACE", "20"))
+            error_patterns = _chat_error_patterns()
+            last, last_cnt = None, base_agent
+            first_new_cnt = base_agent
+            got_first = False
+            text_cnt = None
+            bubble_yielded = False
 
-        if not got_first:
-            raise MuseGenerationError("等待助手首字响应超时")
+            def check_not_error(candidate: str):
+                hit = _match_chat_error(candidate, error_patterns)
+                if hit:
+                    raise MuseGenerationError(f"muse.ai 回覆疑似失败提示（命中「{hit}」），判定为生成失败")
 
-        # 2. 持续捕获，直到生成结束
-        while time.time() < deadline:
-            if stop_event is not None and stop_event.is_set():
-                return
-            time.sleep(0.06)
-            cnt, cur, has_stop = self._poll_chat()
-            if not cur:
-                continue
+            def advance(cnt, cur):
+                """把一次轮询快照喂给当前气泡的 StreamText；气泡变了就先结清旧气泡、
+                换一个全新的 StreamText（绝不跨气泡切片），再按 holdback 阈值决定
+                是否真的吐出增量。"""
+                nonlocal text, text_cnt, bubble_yielded
+                if text_cnt is None or cnt != text_cnt:
+                    if bubble_yielded:
+                        tail = text.finish()
+                        if tail:
+                            yield tail
+                    text = StreamText()
+                    text_cnt = cnt
+                    bubble_yielded = False
+                text.latest = cur
+                if bubble_yielded or len(cur) > holdback_chars:
+                    bubble_yielded = True
+                    piece = text.update(cur)
+                    if piece:
+                        yield piece
 
-            if cur != last:
-                piece = text.update(cur)
-                if piece and not final_only:
-                    yield piece
-                last, stable = cur, 0
-                continue
-            stable += 1
-            # Stop 按钮消失说明前端生成彻底结束，连续 3 次（约 0.18s）无新文本即正常退出；
-            # Stop 按钮仍在时绝不过早截断（模型思考、代码块或网络抖动），允许等待至 stable >= 80（约 5s）防卡死
-            if (not has_stop and stable >= 3) or (has_stop and stable >= 80):
-                rest = text.latest if final_only else text.finish()
-                if text.rewrites:
-                    log.info("回覆在生成中被改写 %d 次；%s", text.rewrites,
-                             "已改用最终文本" if final_only else "只补发新增部分，未重发整段")
-                if rest:
-                    yield rest
-                return
+            stage = "wait_first_token"
+            # 1. 等待助手生成并开始吐字（高频 60ms 采样）
+            while time.time() < first_token_deadline:
+                if stop_event is not None and stop_event.is_set():
+                    return
+                time.sleep(0.06)
+                cnt, cur, has_stop = self._poll_chat()
+                if not cur or (cnt <= base_agent and cur == base_text):
+                    if time.time() - t_sent > 14.0:
+                        try:
+                            tail = self.page.js("document.body.innerText.slice(-500)") or ""
+                        except Exception:
+                            tail = ""
+                        if "Still sending" in tail or "Connecting..." in tail:
+                            raise MuseGenerationError("云端 VM 连接超时 (Still sending)")
+                    continue
+                check_not_error(cur)
+                got_first = True
+                first_new_cnt = cnt
+                last, last_cnt, final_cnt = cur, cnt, cnt
+                for piece in advance(cnt, cur):
+                    if piece and not final_only:
+                        yield piece
+                break
 
-        raise MuseGenerationError("等待助手回复超时")
+            if not got_first:
+                raise MuseGenerationError("等待助手首字响应超时")
+
+            stage = "await_completion"
+            # 2. 持续捕获，直到生成结束
+            stable_since = None
+            planning_deadline = None
+            max_cnt_seen = first_new_cnt
+            while time.time() < deadline:
+                if stop_event is not None and stop_event.is_set():
+                    return
+                time.sleep(0.06)
+                cnt, cur, has_stop = self._poll_chat()
+                if cnt < max_cnt_seen:
+                    # 本轮已经见过更高的气泡数（例如 1->2->1）：这次快照是轮询抓拍到
+                    # 的过渡态/倒退，不是真的回退，忽略，绝不能拿它结束对话。
+                    continue
+                if not cur:
+                    continue
+                check_not_error(cur)
+                max_cnt_seen = max(max_cnt_seen, cnt)
+                final_cnt = cnt
+
+                if cur != last or cnt != last_cnt:
+                    for piece in advance(cnt, cur):
+                        if piece and not final_only:
+                            yield piece
+                    last, last_cnt = cur, cnt
+                    stable_since = None
+                    planning_deadline = None
+                    continue
+
+                if has_stop:
+                    # 助手仍在生成（计划/工具调用/吐字中），不管已经稳定多久都不提前结束；
+                    # 卡死的情况交给外层 timeout 兜底。
+                    stable_since = None
+                    planning_deadline = None
+                    continue
+
+                if stable_since is None:
+                    stable_since = time.time()
+                elif time.time() - stable_since >= stable_seconds:
+                    candidate = text.latest
+                    if final_cnt <= first_new_cnt and _looks_like_planning_line(candidate):
+                        # 稳定下来的居然还是第一个气泡、而且像一句计划话术：
+                        # 多等一会儿看是否还有正式回覆，别把"我將..."直接当答案。
+                        if planning_deadline is None:
+                            planning_deadline = time.time() + planning_grace
+                            continue
+                        if time.time() < planning_deadline:
+                            continue
+                        raise MuseGenerationError(
+                            f"muse.ai 仅返回计划性文字，未等到正式回覆: {candidate}")
+                    check_not_error(text.latest)
+                    rest = text.latest if final_only else text.finish()
+                    if text.rewrites:
+                        log.info("回覆在生成中被改写 %d 次；%s", text.rewrites,
+                                 "已改用最终文本" if final_only else "只补发新增部分，未重发整段")
+                    if rest:
+                        yield rest
+                    return
+
+            raise MuseGenerationError("等待助手回复超时")
+        except Exception as exc:
+            outcome = f"error:{type(exc).__name__}"
+            raise
+        finally:
+            try:
+                thread_url = (self.page.js("location.href") or "") if self.page else ""
+            except Exception:
+                thread_url = ""
+            log.info(
+                "chat 轮次统计 stage=%s outcome=%s thread=%s boxes_before=%d boxes_after=%d "
+                "rewrites=%d out_len=%d elapsed=%.1fs",
+                stage, outcome, thread_url, base_agent, final_cnt, text.rewrites, len(text.latest),
+                time.time() - t_sent,
+            )
 
     def chat(self, cookies: dict, prompt: str, expires: dict | None = None,
              timeout: int | None = None, account_id: str | None = None) -> str:
