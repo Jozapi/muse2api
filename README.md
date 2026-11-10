@@ -6,14 +6,34 @@
   <img src="https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker" alt="Docker" />
   <img src="https://img.shields.io/badge/API-OpenAI%20Compatible-green" alt="OpenAI API Compatible" />
   <img src="https://img.shields.io/badge/License-MIT-orange" alt="License" />
-  <a href="https://linux.do/" target="_blank"><img src="https://img.shields.io/badge/Community-LINUX%20DO-111827?logo=linux&logoColor=white" alt="LINUX DO" /></a>
-</p>
-
-<p align="center">
-  🤝 本开源项目已链接并认可 <b><a href="https://linux.do/" target="_blank">LINUX DO 社区 (https://linux.do/)</a></b> —— 新的理想型社区（真诚、友善、团结、专业）
 </p>
 
 将 **[muse.ai](https://muse.ai/)** 网页端的前沿多模态能力逆向工程封装为标准的 **OpenAI 兼容 RESTful API**。通过无头浏览器 CDP 协议穿透、热备 WebSocket 隧道复用与动态 Session 管理，原生支持文本对话（2~3 秒级流式首字响应）、文生图、图生图编辑、文生视频、首帧图生视频，并提供多账号池亲和轮转、全自动 48 小时会话续期与云端 VM 唤醒保活，以及配套 Chrome 一键导号扩展。
+
+---
+
+## 🎬 推荐：COOL AI — 电商 AI 视频与图片一站式创作
+
+上传一张商品图，就能做出口播带货视频、剧情带货短剧和整套电商详情页。
+
+- **口播带货视频**：自动写脚本、分镜和台词，一键生成真人口播带货视频
+- **剧情带货视频**：反转短剧、对话短剧、剧情植入，自动编剧、分镜、出片
+- **电商详情图**：一张白底图，一键生成首图、场景图、卖点图、细节图、对比图整套
+- **AI 图片与工具**：商品精修、GIF 动图、数字人、字幕擦除、画质增强
+
+👉 立即体验：[www.coolai.mov](https://www.coolai.mov/?utm_source=github&utm_medium=readme&utm_campaign=muse2api)
+
+### 🎬 Recommended: COOL AI — AI video & image studio for e-commerce
+
+Upload one product photo and get talking-head sales videos, story-style ad shorts and a complete product detail-page image set.
+
+- **Talking-head sales videos**: script, shots and lines written for you, generated in one click
+- **Story ads**: twist, dialogue and product-placement shorts, scripted and storyboarded automatically
+- **Product detail images**: hero, lifestyle, selling-point, detail and comparison images from one white-background photo
+- **More tools**: product retouching, GIF animations, digital humans, subtitle removal, upscaling
+
+👉 Try it: [www.coolai.mov](https://www.coolai.mov/?utm_source=github&utm_medium=readme&utm_campaign=muse2api)
+
 
 ---
 
@@ -159,8 +179,8 @@
 
 在账号池点击账号旁的 **代理 / Proxy**：
 
-1. 选择 **指定代理 / Use a proxy**，填写服务器、用户名与密码；不需要认证时留空用户名和密码。
-2. 保存后重新打开窗口，点击 **测试已保存代理 / Test saved proxy**。结果分别显示代理连通性、出口 IP 与 Muse 会话状态。
+1. 选择 **指定代理 / Use a proxy**，直接粘贴完整链接，例如 `socks5://your-user:your-password@proxy.example.com:1080`。用户名和密码会自动解析；也可展开可选的手动认证项分开填写。
+2. 立即点击 **测试连通性 / Test connection**，无需先保存或重新打开窗口。结果分别显示代理连通性、出口 IP 与 Muse 会话状态；测试不同的未保存配置不会改变账号已保存的代理、健康状态或代理检测记录；测试内容与已保存代理一致时会更新该代理的检测记录。确认后再点击 **保存 / Save**，下次请求生效。
 3. 继续使用账号的 **测试 / Test** 按钮，确认浏览器能加载聊天输入框。会话验证成功不保证上游一定允许某次图片或视频生成。
 
 支持 HTTP 代理端点（可选 Basic 认证）与 SOCKS5 代理端点（可选用户名/密码认证），例如 `http://proxy.example.com:8080`、`socks5://proxy.example.com:1080` 或 `socks5h://proxy.example.com:1080`。SOCKS5 的目标主机名经代理解析；HTTPS 网站照常支持。**HTTPS 代理端点、VLESS、VMess 与订阅链接暂不支持直接填写**；使用 Clash/Mihomo 等工具时，应填部署服务器可访问的 HTTP 或 SOCKS5 代理入口。`127.0.0.1:7890` 指的是部署服务器自身，不是导入 Cookie 的电脑。没有配置代理的旧账号保持原有网络行为。
@@ -168,6 +188,8 @@
 聊天、生图、视频、浏览器下载、账号检测、额度查询、会话续签与 VM 唤醒使用账号代理。代理断线、认证失败或浏览器上下文创建失败会报告错误，**不会静默回退直连**。账号切换同时切换代理。外部参考图在账号选取前按现有安全策略预取，继续执行公网地址、重定向与 DNS 重绑定防护，不承诺任意参考图 URL 都通过账号代理。
 
 账号忙碌时修改代理会返回 HTTP 409，请等待当前任务结束。修改后，下次请求会重建连接，不复用旧节点。代理连通性与账号会话是不同状态：HTTP 407、连接超时不会直接把 Cookie 标成失效；代理测试也不会覆盖账号已有的认证结果。
+
+完整链接中的认证信息优先于手动认证字段；用户名或密码中的 `@`、`#`、`/` 等特殊字符应使用 URL 百分号编码。保存后地址规范化为不含认证信息的形式，重新打开不会回显密码。
 
 代理密码与 Cookie 一起保存在本机 `data/accounts.json`，应保护此目录及备份。接口、日志和页面不回显密码。修改时地址与用户名不变，密码留空表示保留；改变地址或用户名时应重新输入认证密码。选择 **默认网络 / Default network** 或 **移除代理 / Remove proxy** 清除配置并恢复默认网络。
 
@@ -194,9 +216,15 @@ POST /admin/accounts/{account_id}/proxy/test
 Authorization: Bearer <MUSE2API_KEY>
 ```
 
-该测试通过已保存代理访问无 Cookie 的 HTTPS 出口检测，再验证 Muse 会话；返回的 `proxy_reachable`、`exit_ip`、`session_ok` 与 `workspace_status` 分别表示各层结果。没有配置代理时返回 400，账号忙碌时返回 409。此操作不生成内容，也不消耗图片/视频生成额度。
+不带请求体时测试已保存代理。要测试尚未保存的代理，发送 `Content-Type: application/json` 和 `{"proxy":{"server":"socks5://your-user:your-password@proxy.example.com:1080"}}`；`server` 同样支持完整 HTTP/SOCKS5h 链接，旧版分栏认证仍兼容。响应 `tested_saved_proxy=false` 表示测试内容不同于当前保存代理，账号保存内容不变；为 `true` 时会更新当前代理的检测记录。
 
-**English:** Each account can use its own HTTP proxy with optional Basic authentication or a SOCKS5 proxy with optional username/password authentication. Select **Use a proxy**, save the server and credentials, then reopen the dialog and choose **Test saved proxy**. Both `socks5://` and `socks5h://` proxy origins are accepted, and target hostnames are resolved by the proxy. HTTPS sites are supported; HTTPS proxy endpoints, VLESS/VMess and subscription URLs are not supported directly. The proxy address must be reachable from the deployment server. A proxy failure never falls back to direct access. Unconfigured accounts retain their existing network behavior. Active accounts cannot change proxies (HTTP 409); the next request recreates the context after a saved change. Keep the password blank only to preserve it with an unchanged server and username. Neither API responses nor logs expose it. The proxy test reports connectivity, egress IP and Muse session status separately; it does not prove generation capability or replace the account's browser test.
+从 1.6.8 升级后，之前未保存检测结果的账号需要重新点击一次“测试连通性”。空记录会显示“代理未测试”，完成实际检测后才显示“代理已连通”或“代理未通过”，不会自动将未知状态标成成功。
+
+先测试再保存时，服务端可沿用当前进程内 5 分钟内的实测记录；必须是同一账号、相同节点与认证、相同登录 Cookie。改动配置、换 Cookie、过期或服务重启后不会沿用旧成功。只复用实际结果，测试失败不会被改成成功；这不代表账号浏览器或生成能力已验证。
+
+该测试通过所选代理访问无 Cookie 的 HTTPS 出口检测，再验证 Muse 会话；返回的 `proxy_reachable`、`exit_ip`、`session_ok` 与 `workspace_status` 分别表示各层结果。既无临时配置又无已保存代理时返回 400，账号忙碌时返回 409。此操作不生成内容，也不消耗图片/视频生成额度。
+
+**English:** Each account can use its own HTTP proxy with optional Basic authentication or a SOCKS5 proxy with optional username/password authentication. Select **Use a proxy**, paste a full URL such as `socks5://your-user:your-password@proxy.example.com:1080`, and click **Test connection** immediately. Saving and reopening are not required. Tests of a different unsaved route leave the saved route, account health and saved test status unchanged. Testing the exact saved configuration updates its connectivity record; click **Save** separately to apply the route. Manual credential fields remain optional. Credentials in the URL take precedence; percent-encode special characters. Both `socks5://` and `socks5h://` proxy origins are accepted, and target hostnames are resolved by the proxy. HTTPS sites are supported; HTTPS proxy endpoints, VLESS/VMess and subscription URLs are not supported directly. The proxy address must be reachable from the deployment server. A proxy failure never falls back to direct access. Unconfigured accounts retain their existing network behavior. Active accounts cannot change proxies (HTTP 409); the next request recreates the context after a saved change. Keep the password blank only to preserve it with an unchanged server and username. Neither API responses nor logs expose it. Saving the exact configuration may adopt a server-observed result from the last five minutes in the same process, bound to the account, route, credentials and cookies. Changed/expired inputs never inherit success, and failed results remain failed. The test API accepts an optional `{"proxy":{"server":"socks5://your-user:your-password@proxy.example.com:1080"}}` body for a draft test; an empty body retains saved-proxy testing. The proxy test reports connectivity, egress IP and Muse session status separately; it does not prove generation capability or replace the account's browser test.
 
 ---
 
@@ -390,14 +418,6 @@ python tests/test_ref_image_safety.py
 
 - **零数据外泄**：本软件全部数据（包括账号凭据、任务队列、媒体文件）均持久化在本地 `data/` 目录中，不依赖任何第三方遥测或外部中转服务。
 - **开源合规**：本项目仅供技术交流、系统自动化运维研究与自动化测试。请勿将本项目用于违反 Meta 平台服务条款或任何国家法律法规之用途。
-
----
-
-## 🤝 社区认可与友情链接
-
-本项目已链接并高度认可 **[LINUX DO 社区](https://linux.do/)**，感谢社区佬友的交流、反馈与支持：
-
-- 🌐 **[LINUX DO 社区 (https://linux.do/)](https://linux.do/)** —— 新的理想型社区（真诚、友善、团结、专业，共建你我引以为荣之社区）
 
 ---
 
