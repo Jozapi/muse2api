@@ -10,6 +10,10 @@ collect_ignore = [
     "test_media_selection.py",
     "test_quota_account_binding.py",
     "test_wake_confirmation.py",
+    # Upstream 1.6.8+ standalone scripts (argparse / module-level runners).
+    "test_admin_layout.py",
+    "test_proxy_status_receipt.py",
+    "test_proxy_url_import.py",
 ]
 
 # Pre-existing, unrelated to chat-completion reliability: this script's
