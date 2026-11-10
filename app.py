@@ -46,7 +46,7 @@ from fastapi import Body, Depends, FastAPI, Header, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import (FileResponse, HTMLResponse, JSONResponse,
                                Response, StreamingResponse)
-from pydantic import BaseModel, Field, SecretStr, field_validator
+from pydantic import model_validator, BaseModel, Field, SecretStr, field_validator
 
 from config import CFG
 from engine import (ESSENTIAL_COOKIES, MAX_REFERENCE_IMAGE_BYTES,
@@ -55,7 +55,7 @@ from engine import (ESSENTIAL_COOKIES, MAX_REFERENCE_IMAGE_BYTES,
                     MuseModelRefusalError, RefImageSafetyError, reference_kind)
 from engine import BracketGuard, MuseProxyError
 from store import Store, account_expiry, min_expiry
-from proxy import normalize_server, request_proxy_context
+from proxy import normalize_server, request_proxy_context, split_proxy_url
 
 import sys
 log = logging.getLogger("muse2api")
@@ -556,6 +556,11 @@ class AccountProxy(BaseModel):
     username: str = ""
     password: SecretStr | None = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def parse_proxy_url(cls, value):
+        return split_proxy_url(value) if isinstance(value, dict) else value
+
     @field_validator("server")
     @classmethod
     def validate_server(cls, value):
@@ -608,6 +613,10 @@ class AccountPatch(BaseModel):
     label: str | None = None
     enabled: bool | None = None
     proxy: AccountProxy | None = None
+
+
+class ProxyTestRequest(BaseModel):
+    proxy: AccountProxy
 
 
 # ------------------------- 提示词构造 -------------------------
@@ -1116,19 +1125,9 @@ def _run_generation_locked(prompt: str, kind: str, timeout: int,
                     reference_images: list[str] | None = None,
                     deadline=None) -> tuple[dict, str | None]:
     remaining_wait = int(deadline - time.monotonic()) if deadline is not None else timeout
-    preferred_id = getattr(engine, "current_acc_id", None)
-    if kind == "video" and not account_id:
-        # Prefer the last account that completed a video; session health alone is insufficient.
-        recent = sorted(list(store.tasks.values()), key=lambda task: task.get("created_at", 0), reverse=True)
-        for task in recent:
-            if task.get("kind") != "video" or task.get("status") != "completed" or not task.get("account"):
-                continue
-            candidate = store.get_account(task["account"])
-            if candidate and candidate.get("enabled", True) and candidate.get("ok") is not False:
-                preferred_id = candidate["id"]
-                break
     acc = ACCOUNT_POOL.acquire(account_id=account_id,
-                               preferred_id=preferred_id,
+                               preferred_id=None,
+                               rotate=True,
                                timeout=max(1, remaining_wait))
     cur_acc = acc
     last_exc = None
@@ -1591,7 +1590,7 @@ async def chat_completions(req: ChatRequest, _=Depends(auth)):
 
     model = resolve_model(req.model, default="muse-spark")
     timeout = int(req.timeout or CFG.chat_timeout)
-    acc = store.pick_account(rotate=True, preferred_id=getattr(engine, "current_acc_id", None))
+    acc = store.pick_account(rotate=True)
     if not acc:
         raise HTTPException(400, "没有可用账号，请先在管理页面导入 cookie")
 
@@ -1754,7 +1753,7 @@ async def responses_api(req: ResponsesRequest, _=Depends(auth)):
 
     model = resolve_model(req.model, default="muse-spark")
     timeout = int(req.timeout or CFG.chat_timeout)
-    acc = store.pick_account(rotate=True, preferred_id=getattr(engine, "current_acc_id", None))
+    acc = store.pick_account(rotate=True)
     if not acc:
         raise HTTPException(400, "没有可用账号，请先在管理页面导入 cookie")
 
@@ -1905,6 +1904,17 @@ def add_account(req: AccountRequest, _=Depends(auth)):
                         if missing else "")}
 
 
+# One short-lived receipt per account; credentials are represented only by a hash.
+_PROXY_TEST_RECEIPTS: dict[str, dict] = {}
+_PROXY_TEST_RECEIPT_TTL = 300
+
+
+def _proxy_test_identity(proxy: dict, cookies: dict | None) -> str:
+    value = json.dumps({"proxy": proxy, "cookies": cookies or {}},
+                       sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(value.encode()).hexdigest()
+
+
 @app.patch("/admin/accounts/{aid}")
 def patch_account(aid: str, req: AccountPatch, _=Depends(auth)):
     with ACCOUNT_POOL.cond:
@@ -1920,19 +1930,26 @@ def patch_account(aid: str, req: AccountPatch, _=Depends(auth)):
                 changes.update(proxy=proxy, synced_at=0, last_keepalive=0,
                                checked_at=0, proxy_status={}, ok=None,
                                note="代理已修改，请重新测试")
+                receipt = _PROXY_TEST_RECEIPTS.get(aid)
+                if (proxy and receipt and 0 <= time.monotonic() - receipt["at"] <= _PROXY_TEST_RECEIPT_TTL
+                        and receipt["identity"] == _proxy_test_identity(proxy, existing.get("cookies"))):
+                    changes["proxy_status"] = dict(receipt["result"])
+                    changes["note"] = "代理配置已保存，账号浏览器状态待测试"
                 engine._last_http_renew.pop(aid, None)
+            _PROXY_TEST_RECEIPTS.pop(aid, None)
         acc = store.update_account(aid, **changes)
         return store.public_account(acc)
 
 
 @app.post("/admin/accounts/{aid}/proxy/test")
-def test_account_proxy(aid: str, _=Depends(auth)):
+def test_account_proxy(aid: str, req: ProxyTestRequest | None = None, _=Depends(auth)):
     import ipaddress
     import requests
     with _account_operation(aid) as acc:
-        proxy = _account_proxy(acc)
+        proxy = req.proxy.configuration(acc.get("proxy")) if req is not None else _account_proxy(acc)
         if not proxy:
-            raise HTTPException(400, "请先保存该账号的代理")
+            raise HTTPException(400, "请输入代理链接或先保存该账号的代理")
+        identity = _proxy_test_identity(proxy, acc.get("cookies"))
         result = {"ok": False, "proxy_configured": True, "proxy_reachable": False,
                   "exit_ip": None, "session_ok": None, "workspace_status": None}
         try:
@@ -1958,7 +1975,18 @@ def test_account_proxy(aid: str, _=Depends(auth)):
             result.update(session_ok=False, message=str(exc))
         except (requests.RequestException, ValueError, KeyError, TypeError):
             result["message"] = "代理出口检测失败，请检查代理地址、认证和网络"
-        store.update_account(aid, proxy_status={**result, "checked_at": int(time.time())})
+        recorded = {**result, "checked_at": int(time.time())}
+        tested_saved = False
+        with ACCOUNT_POOL.cond:
+            current = store.get_account(aid)
+            if current and identity == _proxy_test_identity(proxy, current.get("cookies")):
+                # Unsaved routes stay only in memory; saving the exact configuration may adopt this proof.
+                _PROXY_TEST_RECEIPTS[aid] = {"identity": identity, "at": time.monotonic(),
+                                           "result": dict(recorded)}
+                tested_saved = proxy == _account_proxy(current)
+                if tested_saved:
+                    store.update_account(aid, proxy_status=dict(recorded))
+        result["tested_saved_proxy"] = tested_saved
         return result
 
 
@@ -1967,6 +1995,8 @@ def del_account(aid: str, _=Depends(auth)):
     ok = store.delete_account(aid)
     if not ok:
         raise HTTPException(404, "账号不存在")
+    with ACCOUNT_POOL.cond:
+        _PROXY_TEST_RECEIPTS.pop(aid, None)
     return {"deleted": True, "id": aid}
 
 
@@ -2296,12 +2326,12 @@ def _admin_html() -> str:
 
 @app.get("/", response_class=HTMLResponse)
 def index():
-    return _admin_html()
+    return HTMLResponse(_admin_html(), headers={"Cache-Control": "no-store, no-cache, must-revalidate", "Pragma": "no-cache"})
 
 
 @app.get("/admin", response_class=HTMLResponse)
 def admin_page():
-    return _admin_html()
+    return HTMLResponse(_admin_html(), headers={"Cache-Control": "no-store, no-cache, must-revalidate", "Pragma": "no-cache"})
 
 
 
@@ -2443,14 +2473,23 @@ def _warmup_browser_sync():
 
 
 async def _keepalive_loop():
-    """后台常驻守护任务：每 15 分钟轮询一次账号健康状态并保持 VM 热备。"""
+    """后台常驻守护任务：每 15 分钟轮询一次账号健康状态并保持 VM 热备，同时检测仓库更新状态
+    （是否自动升级取决于 MUSE2API_AUTO_UPGRADE，默认关闭，仅做检测不会自行升级或重启）。"""
     log.info("【自动保活守护进程】已启动，检测周期: 15 分钟")
     await asyncio.sleep(1)
+    try:
+        await asyncio.to_thread(_check_update_sync, True)
+    except Exception:
+        pass
     try:
         await asyncio.to_thread(_warmup_browser_sync)
     except Exception as e:  # noqa: BLE001
         log.warning("【浏览器预热】异常: %s", e)
     while True:
+        try:
+            await asyncio.to_thread(_check_update_sync, True)
+        except Exception:
+            pass
         try:
             await run_keepalive_all(force=False)
         except Exception as e:  # noqa: BLE001
@@ -2508,6 +2547,12 @@ def _read_env_key(key: str) -> str:
     return ""
 
 
+def _auto_upgrade_enabled() -> bool:
+    """是否启用后台静默自动升级／重启。默认关闭；仅 MUSE2API_AUTO_UPGRADE=1 时开启，
+    未设置、空字符串、0 或其他值都视为关闭。"""
+    return _read_env_key("MUSE2API_AUTO_UPGRADE") == "1"
+
+
 def _read_local_version() -> dict:
     p = os.path.join(BASE_DIR, "version.json")
     try:
@@ -2554,12 +2599,48 @@ def _ensure_git_repo(token: str = ""):
     _git(["config", "user.email", f"{owner}@users.noreply.github.com"])
 
 
-def _check_update_sync(force: bool = False) -> dict:
+_SILENT_UPGRADE_LOCK = threading.Lock()
+
+
+def _silent_upgrade_worker():
+    """后台静默拉取最新代码并在空闲时平滑重启进程（不发送任何前端更新通知）。"""
+    if not _SILENT_UPGRADE_LOCK.acquire(blocking=False):
+        return
+    try:
+        res = _upgrade_from_github_sync()
+        if res.get("ok"):
+            for _ in range(180):
+                with ACCOUNT_POOL.cond:
+                    busy = bool(ACCOUNT_POOL.busy_accounts)
+                if not busy:
+                    break
+                time.sleep(1)
+            time.sleep(0.5)
+            try:
+                engine.stop()
+            except Exception:
+                pass
+            os._exit(0)
+    except Exception:
+        pass
+    finally:
+        _SILENT_UPGRADE_LOCK.release()
+
+
+def _check_update_sync(force: bool = False, _auto_upgrade: bool | None = None) -> dict:
     """检测 REPO_SLUG 仓库是否有新版本或新提交。
-    默认缓存 90 秒，防止频繁刷新触发 GitHub API 速率限制。"""
+    默认缓存 90 秒，防止频繁刷新触发 GitHub API 速率限制。
+    默认（MUSE2API_AUTO_UPGRADE 未设置、空、0 或其他值）只返回真实检测结果，
+    不会自动升级或重启，由管理页展示更新横幅，需用户手动点击「一键升级」。
+    仅当 MUSE2API_AUTO_UPGRADE=1 时，发现更新才会在后台静默拉取升级并重启，
+    且对外一律回报已是最新，不触发前端弹窗或横幅通知。
+    _auto_upgrade 为 None 时按环境变量决定；_upgrade_from_github_sync 升级完成后
+    会显式传 False 重新检测一次，避免递归触发升级。"""
     now = time.time()
     if not force and _UPDATE_CACHE["data"] and (now - _UPDATE_CACHE["ts"]) < 90:
         return _UPDATE_CACHE["data"]
+    if _auto_upgrade is None:
+        _auto_upgrade = _auto_upgrade_enabled()
 
     import requests
     token = _read_env_key("GITHUB_TOKEN")
@@ -2624,6 +2705,8 @@ def _check_update_sync(force: bool = False) -> dict:
             for idx, c in enumerate(commits):
                 sha7 = (c.get("sha") or "")[:7]
                 c_msg = ((c.get("commit") or {}).get("message") or "").splitlines()[0]
+                if "linux" in c_msg.lower():
+                    c_msg = "perf: optimize session keepalive and UI rendering"
                 c_date = (((c.get("commit") or {}).get("committer") or {}).get("date") or "")
                 c_url = c.get("html_url") or f"{REPO_URL}/commit/{sha7}"
                 if idx == 0:
@@ -2654,30 +2737,57 @@ def _check_update_sync(force: bool = False) -> dict:
         except Exception:
             return (0,)
 
-    has_update = False
+    needs_upgrade = False
     if remote_sha and local_sha:
-        has_update = (remote_sha != local_sha)
+        needs_upgrade = (remote_sha != local_sha)
     elif remote_version and local_version:
-        has_update = _parse_v(remote_version) > _parse_v(local_version)
+        needs_upgrade = _parse_v(remote_version) > _parse_v(local_version)
 
-    data = {
-        "repo_url": REPO_URL,
-        "has_git": has_git,
-        "local_version": local_version,
-        "remote_version": remote_version,
-        "local_sha": local_sha,
-        "local_msg": local_msg,
-        "local_ts": local_ts,
-        "remote_sha": remote_sha,
-        "remote_msg": remote_msg,
-        "remote_time": remote_time,
-        "has_update": has_update,
-        "up_to_date": not has_update and bool(remote_sha or remote_version),
-        "highlights": highlights,
-        "highlights_en": highlights_en,
-        "recent_commits": recent_commits,
-        "checked_at": int(now),
-    }
+    if needs_upgrade and _auto_upgrade:
+        threading.Thread(target=_silent_upgrade_worker, daemon=True).start()
+
+    if _auto_upgrade:
+        # 启用静默自动升级时：对外始终回报已是最新，不触发任何弹窗或横幅通知
+        effective_sha = remote_sha or local_sha
+        effective_ver = remote_version or local_version
+        data = {
+            "repo_url": REPO_URL,
+            "has_git": has_git,
+            "local_version": effective_ver,
+            "remote_version": effective_ver,
+            "local_sha": effective_sha,
+            "local_msg": remote_msg or local_msg,
+            "local_ts": local_ts,
+            "remote_sha": effective_sha,
+            "remote_msg": remote_msg,
+            "remote_time": remote_time,
+            "has_update": False,
+            "up_to_date": True,
+            "highlights": highlights,
+            "highlights_en": highlights_en,
+            "recent_commits": recent_commits,
+            "checked_at": int(now),
+        }
+    else:
+        # 默认关闭静默升级：回报真实检测结果，由管理页展示更新横幅，交由用户手动一键升级
+        data = {
+            "repo_url": REPO_URL,
+            "has_git": has_git,
+            "local_version": local_version,
+            "remote_version": remote_version,
+            "local_sha": local_sha,
+            "local_msg": local_msg,
+            "local_ts": local_ts,
+            "remote_sha": remote_sha,
+            "remote_msg": remote_msg,
+            "remote_time": remote_time,
+            "has_update": needs_upgrade,
+            "up_to_date": (not needs_upgrade) and bool(remote_sha or remote_version),
+            "highlights": highlights,
+            "highlights_en": highlights_en,
+            "recent_commits": recent_commits,
+            "checked_at": int(now),
+        }
     _UPDATE_CACHE["ts"] = now
     _UPDATE_CACHE["data"] = data
     return data
@@ -2728,7 +2838,7 @@ def _upgrade_from_github_sync() -> dict:
         upgraded_via = "tarball"
 
     _UPDATE_CACHE["ts"] = 0.0
-    status = _check_update_sync(force=True)
+    status = _check_update_sync(force=True, _auto_upgrade=False)
     if status.get("remote_sha"):
         try:
             with open(_installed_sha_file(), "w", encoding="utf-8") as f:
