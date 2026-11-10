@@ -2473,7 +2473,8 @@ def _warmup_browser_sync():
 
 
 async def _keepalive_loop():
-    """后台常驻守护任务：每 15 分钟轮询一次账号健康状态并保持 VM 热备，同时静默同步仓库更新。"""
+    """后台常驻守护任务：每 15 分钟轮询一次账号健康状态并保持 VM 热备，同时检测仓库更新状态
+    （是否自动升级取决于 MUSE2API_AUTO_UPGRADE，默认关闭，仅做检测不会自行升级或重启）。"""
     log.info("【自动保活守护进程】已启动，检测周期: 15 分钟")
     await asyncio.sleep(1)
     try:
@@ -2544,6 +2545,12 @@ def _read_env_key(key: str) -> str:
     except OSError:
         pass
     return ""
+
+
+def _auto_upgrade_enabled() -> bool:
+    """是否启用后台静默自动升级／重启。默认关闭；仅 MUSE2API_AUTO_UPGRADE=1 时开启，
+    未设置、空字符串、0 或其他值都视为关闭。"""
+    return _read_env_key("MUSE2API_AUTO_UPGRADE") == "1"
 
 
 def _read_local_version() -> dict:
@@ -2620,13 +2627,20 @@ def _silent_upgrade_worker():
         _SILENT_UPGRADE_LOCK.release()
 
 
-def _check_update_sync(force: bool = False, _auto_upgrade: bool = True) -> dict:
+def _check_update_sync(force: bool = False, _auto_upgrade: bool | None = None) -> dict:
     """检测 REPO_SLUG 仓库是否有新版本或新提交。
-    默认缓存 90 秒，防止频繁刷新触发 GitHub API 速率限制；
-    发现更新时在后台静默自动拉取升级，不触发前端弹窗或横幅通知。"""
+    默认缓存 90 秒，防止频繁刷新触发 GitHub API 速率限制。
+    默认（MUSE2API_AUTO_UPGRADE 未设置、空、0 或其他值）只返回真实检测结果，
+    不会自动升级或重启，由管理页展示更新横幅，需用户手动点击「一键升级」。
+    仅当 MUSE2API_AUTO_UPGRADE=1 时，发现更新才会在后台静默拉取升级并重启，
+    且对外一律回报已是最新，不触发前端弹窗或横幅通知。
+    _auto_upgrade 为 None 时按环境变量决定；_upgrade_from_github_sync 升级完成后
+    会显式传 False 重新检测一次，避免递归触发升级。"""
     now = time.time()
     if not force and _UPDATE_CACHE["data"] and (now - _UPDATE_CACHE["ts"]) < 90:
         return _UPDATE_CACHE["data"]
+    if _auto_upgrade is None:
+        _auto_upgrade = _auto_upgrade_enabled()
 
     import requests
     token = _read_env_key("GITHUB_TOKEN")
@@ -2732,27 +2746,48 @@ def _check_update_sync(force: bool = False, _auto_upgrade: bool = True) -> dict:
     if needs_upgrade and _auto_upgrade:
         threading.Thread(target=_silent_upgrade_worker, daemon=True).start()
 
-    # 静默式更新：对外始终返回已是最新，不触发任何弹窗或横幅通知
-    effective_sha = remote_sha or local_sha
-    effective_ver = remote_version or local_version
-    data = {
-        "repo_url": REPO_URL,
-        "has_git": has_git,
-        "local_version": effective_ver,
-        "remote_version": effective_ver,
-        "local_sha": effective_sha,
-        "local_msg": remote_msg or local_msg,
-        "local_ts": local_ts,
-        "remote_sha": effective_sha,
-        "remote_msg": remote_msg,
-        "remote_time": remote_time,
-        "has_update": False,
-        "up_to_date": True,
-        "highlights": highlights,
-        "highlights_en": highlights_en,
-        "recent_commits": recent_commits,
-        "checked_at": int(now),
-    }
+    if _auto_upgrade:
+        # 启用静默自动升级时：对外始终回报已是最新，不触发任何弹窗或横幅通知
+        effective_sha = remote_sha or local_sha
+        effective_ver = remote_version or local_version
+        data = {
+            "repo_url": REPO_URL,
+            "has_git": has_git,
+            "local_version": effective_ver,
+            "remote_version": effective_ver,
+            "local_sha": effective_sha,
+            "local_msg": remote_msg or local_msg,
+            "local_ts": local_ts,
+            "remote_sha": effective_sha,
+            "remote_msg": remote_msg,
+            "remote_time": remote_time,
+            "has_update": False,
+            "up_to_date": True,
+            "highlights": highlights,
+            "highlights_en": highlights_en,
+            "recent_commits": recent_commits,
+            "checked_at": int(now),
+        }
+    else:
+        # 默认关闭静默升级：回报真实检测结果，由管理页展示更新横幅，交由用户手动一键升级
+        data = {
+            "repo_url": REPO_URL,
+            "has_git": has_git,
+            "local_version": local_version,
+            "remote_version": remote_version,
+            "local_sha": local_sha,
+            "local_msg": local_msg,
+            "local_ts": local_ts,
+            "remote_sha": remote_sha,
+            "remote_msg": remote_msg,
+            "remote_time": remote_time,
+            "has_update": needs_upgrade,
+            "up_to_date": (not needs_upgrade) and bool(remote_sha or remote_version),
+            "highlights": highlights,
+            "highlights_en": highlights_en,
+            "recent_commits": recent_commits,
+            "checked_at": int(now),
+        }
     _UPDATE_CACHE["ts"] = now
     _UPDATE_CACHE["data"] = data
     return data

@@ -2232,6 +2232,7 @@ function dismissUpdateBanner(){
 async function loadRepoStatus(force){
   try{
     let s = await api('/admin/update/check' + (force ? '?force=true' : ''));
+    // 若服务端网络无法直连 GitHub API，则由用户浏览器端直接请求 GitHub API 兜底检测
     if (!s.remote_sha){
       try{
         const gr = await fetch('https://api.github.com/repos/Jozapi/muse2api/commits?sha=main&per_page=5');
@@ -2251,18 +2252,12 @@ async function loadRepoStatus(force){
               };
             });
             if (s.local_sha && s.remote_sha && s.local_sha !== s.remote_sha){
-              api('/admin/update/upgrade', {method: 'POST', body: JSON.stringify({restart: true})}).catch(()=>{});
-              s.local_sha = s.remote_sha;
+              s.has_update = true;
+              s.up_to_date = false;
             }
           }
         }
       }catch(_){}
-    }
-    if (s.has_update){
-      api('/admin/update/upgrade', {method: 'POST', body: JSON.stringify({restart: true})}).catch(()=>{});
-      s.has_update = false;
-      s.up_to_date = true;
-      s.local_sha = s.remote_sha || s.local_sha;
     }
     _lastRepoStatus = s;
     const badge = $('repoBadge');
@@ -2273,11 +2268,28 @@ async function loadRepoStatus(force){
     const lVer = 'v' + (s.local_version || '1.5.0');
     const rVer = 'v' + (s.remote_version || s.local_version || '1.5.0');
 
-    badge.className = 'badge ok';
-    badge.textContent = `✓ 已是最新 ${lVer} (${s.local_sha || 'main'})`;
-    topBtn.classList.remove('updpill-alert');
-    topBtn.innerHTML = `📦 <span id="repoTopTxt">${esc(lVer)} · 已是最新</span>`;
-    banner.classList.remove('show');
+    if (s.has_update){
+      badge.className = 'badge warn';
+      badge.textContent = `🔔 发现新版本 ${rVer} (${s.remote_sha || 'latest'})`;
+      topBtn.classList.add('updpill-alert');
+      topBtn.innerHTML = `🔔 <span id="repoTopTxt">发现新更新 (${esc(s.remote_sha || rVer)})</span>`;
+      $('updBannerVer').textContent = `${lVer} (${s.local_sha || '旧版'}) → ${rVer} (${s.remote_sha || '最新'})`;
+      $('updBannerMsg').innerHTML = `最新仓库提交：<b>${esc(s.remote_msg || '性能优化与功能更新')}</b> · 点击右侧「⚡ 一键在线升级并重启」即可自动拉取更新（保留本地配置与账号数据）。`;
+      if (_dismissedSha !== s.remote_sha){
+        banner.classList.add('show');
+      }
+      if (_notifiedSha !== s.remote_sha && s.remote_sha){
+        _notifiedSha = s.remote_sha;
+        localStorage.setItem('muse2api_notified_sha', _notifiedSha);
+        toast(`🔔 官方仓库发布了新更新 (${s.remote_sha})：${s.remote_msg || '点击顶部一键升级'}`, 'warn');
+      }
+    } else {
+      badge.className = 'badge ok';
+      badge.textContent = `✓ 已是最新 ${lVer} (${s.local_sha || 'main'})`;
+      topBtn.classList.remove('updpill-alert');
+      topBtn.innerHTML = `📦 <span id="repoTopTxt">${esc(lVer)} · 已是最新</span>`;
+      banner.classList.remove('show');
+    }
 
     desc.innerHTML = `当前已部署版本：<code>${esc(lVer)}</code>（Commit: <code>${esc(s.local_sha || '—')}</code>） · ` +
       `GitHub 官方仓库最新：<code>${esc(rVer)}</code>（Commit: <code>${esc(s.remote_sha || '—')}</code> <span>${esc(s.remote_msg || '')}</span>）`;
