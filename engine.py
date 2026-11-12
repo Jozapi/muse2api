@@ -1148,11 +1148,52 @@ class MuseEngine:
     # 检查「文字真的进了输入框 + Send 按钮真的被渲染出来」。
     # 两个条件缺一不可：Send 按钮只有 React state 里有文字才会渲染 ——
     # 它在，就说明 React 真的收到了输入（不是 DOM value 被改了而已）。
+    _SEND_BUTTON_JS = r"""(function(){
+        function visible(e){
+            return e.getClientRects().length > 0
+                && getComputedStyle(e).visibility !== 'hidden';
+        }
+        var ta = document.activeElement;
+        if (!ta || !ta.matches('textarea') || !visible(ta)) {
+            ta = Array.from(document.querySelectorAll('textarea')).find(visible);
+        }
+        if (!ta) return null;
+        var label = /^(?:send(?:\s+message)?|发送(?:消息)?|發送(?:訊息)?|傳送(?:訊息)?|送出)$/i;
+        var testId = /^(?:hatch-composer-send-button|composer-send-button|send-button)$/i;
+        function isSend(b){
+            // The Send button itself uses the bg-chat-user-bubble color class.
+            // Exclude message containers, not buttons carrying that color token.
+            if (!visible(b) || b.closest('aside,nav,[role="navigation"],'
+                + 'div[class*="chat-user-bubble"],div[class*="group/msg"],'
+                + 'div[class*="hatch-chat-groupable-bubble"]')) return false;
+            return label.test((b.getAttribute('aria-label') || '').trim())
+                || testId.test((b.getAttribute('data-testid') || '').trim())
+                || label.test((b.innerText || '').trim());
+        }
+        // Search the nearest composer first. Never search the whole document:
+        // a history preview may itself contain "send", "Resend" or "Send feedback".
+        for (var r = ta.parentElement; r && r !== document.body; r = r.parentElement) {
+            var b = Array.from(r.querySelectorAll('button,[role="button"]')).find(isSend);
+            if (b) return b;
+            if (r.matches('form,main,[role="main"]')) break;
+        }
+        return null;
+    })()"""
+    _SEND_DISABLED_JS = (
+        "b.disabled || b.matches(':disabled')"
+        " || b.getAttribute('aria-disabled') === 'true' || b.closest('[inert]')"
+    )
     _SEND_STATE_JS = (
         "(function(){var ta=document.querySelector('textarea');"
-        "var b=[...document.querySelectorAll('button,[role=button]')]"
-        ".find(function(x){return /send/i.test(x.getAttribute('aria-label')||'');});"
-        "return JSON.stringify({v:ta?ta.value:'',btn:b?(b.disabled?2:1):0});})()"
+        "var b=" + _SEND_BUTTON_JS + ";"
+        "return JSON.stringify({v:ta?ta.value:'',btn:b?("
+        + _SEND_DISABLED_JS + "?2:1):0});})()"
+    )
+    _CLICK_SEND_JS = (
+        "(function(){var b=" + _SEND_BUTTON_JS + ";"
+        "if(!b)return 'no-button';"
+        "if(" + _SEND_DISABLED_JS + ")return 'disabled';"
+        "b.click();return 'clicked';})()"
     )
 
     def _send(self, prompt: str):
@@ -1203,15 +1244,7 @@ class MuseEngine:
         clicked = "no-button"
         t_deadline = time.time() + 3.0
         while time.time() < t_deadline:
-            res = self.page.js(
-                "(function(){var b=[...document.querySelectorAll('button,[role=button]')]"
-                ".filter(function(x){return x.offsetParent!==null;})"
-                ".find(function(x){return /发送|send/i.test(x.getAttribute('aria-label')||'')"
-                "||/发送|send/i.test(x.getAttribute('data-testid')||'')"
-                "||/send/i.test(x.innerText||'');});"
-                "if(!b)return 'no-button';"
-                "if(b.disabled)return 'disabled';"
-                "b.click();return 'clicked';})()")
+            res = self._click_send()
             if res == "clicked":
                 clicked = "clicked"
                 break
@@ -1253,17 +1286,9 @@ class MuseEngine:
         return "、".join(parts)
 
     def _click_send(self) -> str:
-        """只点发送按钮（不重新填字），返回 clicked / disabled / no-button。"""
+        """只点当前输入框的发送按钮（不重新填字），不把点击等同于上游送达。"""
         try:
-            return str(self.page.js(
-                "(function(){var b=[...document.querySelectorAll('button,[role=button]')]"
-                ".filter(function(x){return x.offsetParent!==null;})"
-                ".find(function(x){return /发送|send/i.test(x.getAttribute('aria-label')||'')"
-                "||/发送|send/i.test(x.getAttribute('data-testid')||'')"
-                "||/send/i.test(x.innerText||'');});"
-                "if(!b)return 'no-button';"
-                "if(b.disabled)return 'disabled';"
-                "b.click();return 'clicked';})()"))
+            return str(self.page.js(self._CLICK_SEND_JS))
         except Exception:  # noqa: BLE001
             return "error"
 
@@ -1570,9 +1595,13 @@ class MuseEngine:
         ".filter(function(b){return /hatch-agent-bubble-bg/.test(b.className||'');});"
         "var nonEmpty=bs.filter(function(b){return ((b.innerText||'').trim().length)>0;});"
         "var txt=nonEmpty.length?(nonEmpty[nonEmpty.length-1].innerText||'').trim():'';"
-        "var stop=!!(document.querySelector('[data-testid=\"hatch-composer-stop-button\"]')"
-        "||document.querySelector('button[aria-label*=\"Stop\" i]')"
-        "||document.querySelector('button[aria-label*=\"停止\"]'));"
+        # 只认「本轮回覆」的 Stop：输入框的 hatch-composer-stop-button，或 aria-label 就是
+        # Stop／停止 的按钮。任务列表里的「Stop task」属于账号里别的（可能早就挂住的）任务，
+        # 跟这一轮无关——把它算进来，回覆早就写完了也会一直等到 chat_timeout 才报错。
+        "var stop=[].slice.call(document.querySelectorAll("
+        "'[data-testid=\"hatch-composer-stop-button\"],button[aria-label*=\"Stop\" i],button[aria-label*=\"停止\"]'))"
+        ".some(function(b){return b.getAttribute('data-testid')==='hatch-composer-stop-button'"
+        "||!/task|任务|任務|タスク/i.test(b.getAttribute('aria-label')||'');});"
         "return JSON.stringify({cnt:nonEmpty.length,total:bs.length,txt:txt,stop:stop});})()"
     )
 
