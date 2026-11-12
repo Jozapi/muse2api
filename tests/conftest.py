@@ -14,6 +14,8 @@ collect_ignore = [
     "test_admin_layout.py",
     "test_proxy_status_receipt.py",
     "test_proxy_url_import.py",
+    # Upstream 1.6.10: real-Chromium send-button script (argparse --root).
+    "test_composer_send_browser.py",
 ]
 
 # Pre-existing, unrelated to chat-completion reliability: this script's
