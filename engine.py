@@ -1570,9 +1570,13 @@ class MuseEngine:
         ".filter(function(b){return /hatch-agent-bubble-bg/.test(b.className||'');});"
         "var nonEmpty=bs.filter(function(b){return ((b.innerText||'').trim().length)>0;});"
         "var txt=nonEmpty.length?(nonEmpty[nonEmpty.length-1].innerText||'').trim():'';"
-        "var stop=!!(document.querySelector('[data-testid=\"hatch-composer-stop-button\"]')"
-        "||document.querySelector('button[aria-label*=\"Stop\" i]')"
-        "||document.querySelector('button[aria-label*=\"停止\"]'));"
+        # 只认「本轮回覆」的 Stop：输入框的 hatch-composer-stop-button，或 aria-label 就是
+        # Stop／停止 的按钮。任务列表里的「Stop task」属于账号里别的（可能早就挂住的）任务，
+        # 跟这一轮无关——把它算进来，回覆早就写完了也会一直等到 chat_timeout 才报错。
+        "var stop=[].slice.call(document.querySelectorAll("
+        "'[data-testid=\"hatch-composer-stop-button\"],button[aria-label*=\"Stop\" i],button[aria-label*=\"停止\"]'))"
+        ".some(function(b){return b.getAttribute('data-testid')==='hatch-composer-stop-button'"
+        "||!/task|任务|任務|タスク/i.test(b.getAttribute('aria-label')||'');});"
         "return JSON.stringify({cnt:nonEmpty.length,total:bs.length,txt:txt,stop:stop});})()"
     )
 
