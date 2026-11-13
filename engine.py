@@ -407,6 +407,24 @@ def _open_public_ref_image(url: str):
     raise urllib.error.URLError("参考图重定向次数过多")
 
 
+# 找出 muse.ai 的聊天滚动容器（内层 div）并滚到底。全页 querySelectorAll('*') 再逐个
+# getComputedStyle 会强制整页样式计算，在 60ms 轮询下是浏览器 CPU 的大头、还会拖慢页面
+# 本身渲染吐字。结果缓存在 window 上：找到的容器仍挂在 DOM 上且仍可滚动时最多沿用 2 秒，
+# 没找到时 250ms 后再扫。Page.navigate 换页时 window 重建，缓存自然作废。
+# 只能嵌在 (function(){ ... })() 里使用（变量均为局部 var）。
+_SCROLL_CHAT_JS = (
+    "var __sc=window.__m2aScroller,__now=Date.now(),__el=__sc&&__sc.el;"
+    "if(!__sc||__now-__sc.t>=(__el?2000:250)"
+    "||(__el&&(!__el.isConnected||__el.scrollHeight<=__el.clientHeight+100))){"
+    "var __els=[...document.querySelectorAll('*')].filter(function(e){"
+    "var s=getComputedStyle(e);"
+    "return (s.overflowY==='auto'||s.overflowY==='scroll')&&e.scrollHeight>e.clientHeight+100;});"
+    "__els.sort(function(a,b){return b.scrollHeight-a.scrollHeight;});"
+    "__el=__els[0]||null;window.__m2aScroller={el:__el,t:__now};}"
+    "if(__el)__el.scrollTop=__el.scrollHeight;"
+)
+
+
 class MuseEngine:
     def __init__(self, cfg):
         self.cfg = cfg
@@ -1302,13 +1320,7 @@ class MuseEngine:
         虚拟列表按滚动位置渲染节点 —— 不滚到底，新消息根本不在 DOM 里。"""
         try:
             self.page.js(
-                "(function(){"
-                "var els=[...document.querySelectorAll('*')].filter(function(e){"
-                "var s=getComputedStyle(e);"
-                "return (s.overflowY==='auto'||s.overflowY==='scroll')"
-                "&&e.scrollHeight>e.clientHeight+100;});"
-                "els.sort(function(a,b){return b.scrollHeight-a.scrollHeight;});"
-                "if(els[0])els[0].scrollTop=els[0].scrollHeight;"
+                "(function(){" + _SCROLL_CHAT_JS +
                 "var s=document.scrollingElement||document.body;"
                 "s.scrollTop=s.scrollHeight;"
                 "var el=document.querySelector('textarea');"
@@ -1584,12 +1596,7 @@ class MuseEngine:
         "return String(n);})()"
     )
     _POLL_CHAT_JS = (
-        "(function(){"
-        "var els=[...document.querySelectorAll('*')].filter(function(e){"
-        "var s=getComputedStyle(e);"
-        "return (s.overflowY==='auto'||s.overflowY==='scroll')&&e.scrollHeight>e.clientHeight+100;});"
-        "els.sort(function(a,b){return b.scrollHeight-a.scrollHeight;});"
-        "if(els[0])els[0].scrollTop=els[0].scrollHeight;"
+        "(function(){" + _SCROLL_CHAT_JS +
         "var scope=document.querySelector('main,[class*=\"chat-scroll\"],[class*=\"hatch-chat-scroll\"]')||document.body;"
         "var bs=[].slice.call(scope.querySelectorAll('div[class*=\"hatch-chat-groupable-bubble\"]'))"
         ".filter(function(b){return /hatch-agent-bubble-bg/.test(b.className||'');});"
@@ -1717,6 +1724,7 @@ class MuseEngine:
                         yield piece
 
             stage = "wait_first_token"
+            next_stuck_check = 0.0
             # 1. 等待助手生成并开始吐字（高频 60ms 采样）
             while time.time() < first_token_deadline:
                 if stop_event is not None and stop_event.is_set():
@@ -1724,7 +1732,10 @@ class MuseEngine:
                 time.sleep(0.06)
                 cnt, cur, has_stop = self._poll_chat()
                 if not cur or (cnt <= base_agent and cur == base_text):
-                    if time.time() - t_sent > 14.0:
+                    # document.body.innerText 会强制整页排版，首字最长可等 150 秒，
+                    # 不必每 60ms 读一次：14 秒后每秒检查一次卡住提示即可。
+                    if time.time() - t_sent > 14.0 and time.time() >= next_stuck_check:
+                        next_stuck_check = time.time() + 1.0
                         try:
                             tail = self.page.js("document.body.innerText.slice(-500)") or ""
                         except Exception:
