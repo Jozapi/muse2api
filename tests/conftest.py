@@ -17,9 +17,3 @@ collect_ignore = [
     # Upstream 1.6.10: real-Chromium send-button script (argparse --root).
     "test_composer_send_browser.py",
 ]
-
-# Pre-existing, unrelated to chat-completion reliability: this script's
-# module-level assert fails because admin.html's download link/version badge
-# have drifted out of sync with version.json (currently 1.6.9 vs the extension
-# notice hardcoded for 1.6.x copy). Tracked separately; not touched here.
-collect_ignore.append("test_extension_upgrade_notice.py")

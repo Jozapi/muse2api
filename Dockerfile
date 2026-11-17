@@ -9,11 +9,16 @@ ENV DEBIAN_FRONTEND=noninteractive \
     MUSE2API_CHROMIUM=/usr/bin/chromium \
     MUSE2API_CDP_PORT=19210
 
+ARG BUILD_SHA=
+ENV MUSE2API_BUILD_SHA=$BUILD_SHA
+LABEL org.opencontainers.image.revision=$BUILD_SHA
+
 WORKDIR /app
 
 # 安装 Chromium、中文字体与核心依赖
 RUN apt-get update && apt-get install -y --no-install-recommends \
     chromium \
+    ffmpeg \
     fonts-wqy-zenhei \
     fonts-freefont-ttf \
     procps \
@@ -27,7 +32,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # 复制代码与必要目录
-COPY admin.html app.py cdp.py config.py engine.py store.py proxy.py version.json ./
+COPY admin.html app.py cdp.py config.py engine.py store.py proxy.py generation_timing.py thumbnails.py version.json ./
 COPY deploy/ ./deploy/
 COPY extension/ ./extension/
 COPY tools/ ./tools/
