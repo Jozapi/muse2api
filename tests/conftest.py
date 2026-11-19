@@ -16,4 +16,6 @@ collect_ignore = [
     "test_proxy_url_import.py",
     # Upstream 1.6.10: real-Chromium send-button script (argparse --root).
     "test_composer_send_browser.py",
+    # Upstream 1.6.12: standalone Chromium script for #62 (argparse-like sys.argv[1:]).
+    "test_full_image_viewer.py",
 ]

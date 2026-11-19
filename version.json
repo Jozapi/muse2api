@@ -1,11 +1,12 @@
 {
-  "version": "1.6.11",
-  "updated_at": "2026-11-18",
+  "version": "1.6.12",
+  "updated_at": "2026-11-19",
   "repo": "https://github.com/Jozapi/muse2api",
   "highlights": [
     "Jozapi fork：保住【】裡的文字。muse.ai 會把【…】當成引用標記刪掉，提示詞改用同形括號〖〗送出，回覆再換回【】（MUSE2API_PROTECT_BRACKETS=0 可關閉）。",
     "Jozapi fork：修正對話回覆在 muse.ai 重新渲染時被重複輸出（截斷的一份 + 完整的一份），非串流請求改回傳最終文字，串流不再整段重送。",
     "Jozapi fork：修正對話回覆早已寫完卻一直等到 chat_timeout（300 秒）才失敗。muse.ai 任務列表裡其他任務的「Stop task」按鈕不再被當成本輪仍在生成。",
+    "合入上游 1.6.12：修复 #62，muse.ai 从 2026-11-19 起聊天里只显示约 498px 的缩略图，生成的图片因此变小。现在图片任务会打开 muse.ai 的图片查看器取原图（实测 1344x1792），取不到时仍返回缩略图并在日志里提示。只影响图片任务；视频、对话与参考素材上传不变。无需再升级浏览器插件。",
     "合入上游 1.6.11：修复工作区暂未分配时丢弃新 Cookie 的问题；保存轮换后的登录态，但不把未确认会话标成成功。",
     "合入上游 1.6.11：浏览器插件升级至 1.0.3：按当前普通/无痕窗口读取 Cookie，避免导入另一个窗口的账号；找不到存储区时停止导入。",
     "合入上游 1.6.11：图片和视频采用独立排队时限（默认 3600 秒，0 为不限）；排队不消耗生成预算，失败记录保留账号、尝试次数和原始错误。",
@@ -19,6 +20,7 @@
     "Jozapi fork: keep text inside 【】. muse.ai deletes 【…】 as citation markers; prompts now travel with look-alike brackets 〖〗 and replies get 【】 back (MUSE2API_PROTECT_BRACKETS=0 turns it off).",
     "Jozapi fork: chat replies are no longer duplicated when muse.ai re-renders them (a cut-off copy followed by the full one). Non-streaming requests return the final text; streaming never resends the whole answer.",
     "Jozapi fork: finished chat replies no longer wait for the full chat_timeout (300 s) and then fail. A \"Stop task\" button from another task in muse.ai's task list no longer counts as this reply still generating.",
+    "Merged upstream 1.6.12: Fix #62. Since 2026-11-19 muse.ai shows only a ~498px thumbnail in the chat, so generated images came back small. Image tasks now open muse.ai's image viewer and return the full-size picture (measured 1344x1792); if it cannot be opened the thumbnail is still returned and a warning is logged. Images only; video, chat and reference uploads are unchanged. No further extension upgrade is needed.",
     "Merged upstream 1.6.11: Preserve cookies rotated by unassigned-workspace responses without marking an unconfirmed session healthy.",
     "Merged upstream 1.6.11: Extension 1.0.3 reads the active regular/incognito window cookie store and stops instead of importing from another store when identification fails.",
     "Merged upstream 1.6.11: Image/video queue waits have a separate budget (3600 seconds by default; 0 means unlimited). Failed tasks retain account, attempt and original error.",
