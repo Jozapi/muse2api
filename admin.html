@@ -153,6 +153,15 @@
   .tile .check-tag input{width:14px;height:14px;margin:0;cursor:pointer;accent-color:var(--accent)}
   .tile .thumb{height:150px;background:#060911;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
   .tile .thumb img,.tile .thumb video{width:100%;height:100%;object-fit:contain;display:block}
+  .tile button.thumb{width:100%;padding:0;border:0;border-radius:0;cursor:pointer;color:#fff}
+  .tile .thumb img[hidden]{display:none}
+  .tile .play-icon{position:absolute;display:grid;place-items:center;width:44px;height:44px;border-radius:50%;background:rgba(0,0,0,.65);font-size:21px;pointer-events:none}
+  .tile button.thumb:focus-visible{outline:2px solid var(--accent);outline-offset:-3px}
+  dialog.media-dialog{width:min(960px,calc(100% - 32px));max-height:calc(100dvh - 32px);padding:16px;border:1px solid var(--line);border-radius:var(--radius);background:var(--bg2);color:var(--text)}
+  dialog.media-dialog::backdrop{background:rgba(0,0,0,.75)}
+  .media-dialog header{display:flex;align-items:center;gap:16px;margin-bottom:12px}
+  .media-dialog h2{margin:0;flex:1;min-width:0;font-size:15px;overflow-wrap:anywhere}
+  .media-dialog video{display:block;width:100%;max-height:75dvh;background:#000}
   .tile .meta{padding:9px 11px;font-size:11.5px;color:var(--muted)}
   .tile .meta .nm{font-family:ui-monospace,monospace;color:var(--text);font-size:11px;word-break:break-all}
   .tile .meta .ac{display:flex;gap:6px;margin-top:7px;align-items:center}
@@ -204,7 +213,7 @@
   <div class="hwrap">
     <div class="logo">
       <span class="dot"></span>muse2api <small>Muse 网页额度 · 反代 API</small>
-      <a href="https://github.com/Jozapi/muse2api" target="_blank" class="pill" style="margin-left:10px;text-decoration:none;color:var(--text);border-color:var(--line2);cursor:pointer" title="打开 GitHub 开源仓库 (https://github.com/Jozapi/muse2api)">
+      <a href="https://github.com/Jozapi/muse2api" target="_blank" id="repoHomeLink" class="pill" style="margin-left:10px;text-decoration:none;color:var(--text);border-color:var(--line2);cursor:pointer" title="打开 GitHub 开源仓库 (https://github.com/Jozapi/muse2api)">
         <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" style="vertical-align:-2px"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
         <b>GitHub 仓库</b>
       </a>
@@ -252,8 +261,8 @@
   <div class="card" id="repoPanel" style="display:none;border-color:rgba(79,140,255,.45);margin-bottom:16px">
     <h3>
       <svg viewBox="0 0 16 16" width="15" height="15" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
-      官方仓库版本检测与在线热升级
-      <a href="https://github.com/Jozapi/muse2api" target="_blank" class="tag" style="color:var(--accent)">Jozapi/muse2api ↗</a>
+      仓库版本检测与更新
+      <a href="https://github.com/Jozapi/muse2api" target="_blank" id="repoPanelLink" class="tag" style="color:var(--accent)">Jozapi/muse2api ↗</a>
       <span id="repoBadge" class="badge info" style="margin-left:auto">检测中…</span>
     </h3>
     <div class="hint" id="repoStatusDesc" data-i18n="repo-status-desc">正在实时对比本地版本与 GitHub 官方仓库最新版本…（在线升级自动保留 <code>.env</code> 密钥与 <code>data/</code> 账号池及媒体数据）</div>
@@ -261,7 +270,7 @@
     <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <button onclick="upgradeNow()" id="btnRepoPull">⚡ 一键从 GitHub 在线更新并重启</button>
       <button class="ghost" onclick="loadRepoStatus(true)">🔍 立即重新检测更新</button>
-      <a href="https://github.com/Jozapi/muse2api/commits/main" target="_blank" class="btnlike ghostlike" style="padding:7px 13px;font-size:12.5px">查看 GitHub 完整提交记录 ↗</a>
+      <a id="repoCommitsLink" href="https://github.com/Jozapi/muse2api/commits/main" target="_blank" class="btnlike ghostlike" style="padding:7px 13px;font-size:12.5px">查看 GitHub 完整提交记录 ↗</a>
     </div>
   </div>
 
@@ -286,7 +295,7 @@
     <button data-t="docs">接入文档</button>
   </nav>
 
-  <div class="card" id="extensionUpgradeNotice" style="border-color:var(--warn)" role="note" data-i18n="extension-upgrade-notice"><b>重要：请手动升级浏览器插件至 1.0.2</b><br>更新服务不会自动升级已加载的扩展。下载新包，替换原扩展目录文件，再到 <code>chrome://extensions</code> 或 <code>edge://extensions</code> 点击“重新加载”。不同浏览器个人资料需分别升级。<br><a href="https://github.com/czg86389-hub/muse2api/releases/download/v1.6.10/muse2api-chrome-extension-v1.6.10.zip">下载扩展 1.0.2</a>；油猴用户请升级脚本至 1.1.2。</div>
+  <div class="card" id="extensionUpgradeNotice" style="border-color:var(--warn)" role="note" data-i18n="extension-upgrade-notice"><b>重要：请手动升级浏览器插件至 1.0.3</b><br>更新服务不会自动升级已加载的扩展。下载新包，替换原扩展目录文件，再到 <code>chrome://extensions</code> 或 <code>edge://extensions</code> 点击“重新加载”。不同浏览器个人资料需分别升级。<br><a href="/admin/extension">下载扩展 1.0.3</a>；油猴用户请升级脚本至 1.1.2。</div>
 
   <!-- ==================== 账号池 ==================== -->
   <section class="tab active" id="tab-pool">
@@ -327,6 +336,15 @@
       <div class="stat r"><div class="k">异常</div><div class="v" id="sBad">0</div></div>
       <div class="stat y"><div class="k">已禁用</div><div class="v" id="sDis">0</div></div>
       <div class="stat"><div class="k">媒体文件</div><div class="v" id="sMedia">0</div></div>
+    </div>
+
+    <div class="card" id="generationQueuePanel">
+      <h3>排队与生成时限</h3>
+      <div class="hint">排队不占用生成时限。任务获得并发槽位和账号后开始计算生成时间；重试时等待账号也不计入。</div>
+      <form id="generationQueueForm" onsubmit="event.preventDefault();saveGenerationQueue()">
+        <div class="row"><div style="max-width:340px"><label for="generationQueueTimeout">独立排队时限（秒，0 为不限）</label><input id="generationQueueTimeout" type="number" min="0" max="86400" required value="3600"></div></div>
+        <div style="display:flex;align-items:center;gap:12px;margin-top:12px"><button id="generationQueueSave" type="submit">保存排队设置</button><span class="hint" id="generationQueueSummary"></span></div>
+      </form>
     </div>
 
     <div class="card">
@@ -751,6 +769,11 @@ t = requests.post(<span class="s">"BASE/v1/videos"</span>, json={<span class="s"
 
 <div id="toasts"></div>
 
+<dialog id="mediaDialog" class="media-dialog" aria-labelledby="mediaPreviewTitle">
+  <header><h2 id="mediaPreviewTitle" data-no-i18n></h2><button class="btn" type="button" onclick="closeMediaPreview()">关闭预览</button></header>
+  <div id="mediaPlayer"></div>
+</dialog>
+
 <dialog id="proxyDialog" class="proxy-dialog" aria-labelledby="proxyTitle" aria-describedby="proxyHelp">
   <form id="proxyForm">
     <h2 id="proxyTitle">账号代理</h2>
@@ -799,6 +822,14 @@ function setLang(v){
 }
 /* 整句：中文 → 英文 */
 const I18N_EN = {
+  "排队与生成时限": "Queue and generation timeouts",
+  "排队不占用生成时限。任务获得并发槽位和账号后开始计算生成时间；重试时等待账号也不计入。": "Queue time does not consume the generation budget. Execution starts after acquiring a slot and account; retry account waits are excluded too.",
+  "独立排队时限（秒，0 为不限）": "Separate queue timeout (seconds; 0 = unlimited)",
+  "保存排队设置": "Save queue settings",
+  "排队设置已保存": "Queue settings saved",
+
+"播放视频": "Play video",
+  "关闭预览": "Close preview",
   "代理配置已保存，账号浏览器状态待测试": "Proxy saved; account browser status still needs testing",
   "代理地址或完整链接": "Proxy address or full URL",
   "可直接粘贴包含用户名和密码的 HTTP、SOCKS5 或 SOCKS5h 链接，立即测试，无需先保存。": "Paste an HTTP, SOCKS5 or SOCKS5h URL including credentials and test it immediately, without saving.",
@@ -869,7 +900,7 @@ const I18N_EN = {
   "⚡ 一键在线升级并重启": "⚡ Upgrade online and restart",
   "查看更新内容": "View changes",
   "暂不提醒": "Remind me later",
-  "官方仓库版本检测与在线热升级": "Official repository version check & online hot upgrade",
+  "仓库版本检测与更新": "Official repository version check & online hot upgrade",
   "检测中…": "Checking…",
   "⚡ 一键从 GitHub 在线更新并重启": "⚡ Update from GitHub and restart",
   "🔍 立即重新检测更新": "🔍 Check for updates now",
@@ -1211,7 +1242,7 @@ const I18N_EN = {
 };
 /* 含富文本的块：data-i18n="key" → 英文 innerHTML（须保留原有子元素的 id/class/属性） */
 const I18N_EN_HTML = {
-  "extension-upgrade-notice": "<b>Important: manually upgrade the extension to 1.0.2</b><br>Updating the service does not update unpacked extensions. Replace files in the original folder and click Reload at <code>chrome://extensions</code> or <code>edge://extensions</code>, separately for each browser profile.<br><a href=\"https://github.com/czg86389-hub/muse2api/releases/download/v1.6.10/muse2api-chrome-extension-v1.6.10.zip\">Download extension 1.0.2</a>; upgrade the userscript to 1.1.2.",
+  "extension-upgrade-notice": "<b>Important: manually upgrade the extension to 1.0.3</b><br>Updating the service does not update unpacked extensions. Replace files in the original folder and click Reload at <code>chrome://extensions</code> or <code>edge://extensions</code>, separately for each browser profile.<br><a href=\"/admin/extension\">Download extension 1.0.3</a>; upgrade the userscript to 1.1.2.",
   "repo-status-desc": "Comparing your local version with the latest version in the official GitHub repository… (online upgrades keep your <code>.env</code> keys and the <code>data/</code> Account Pool and media data)",
   "auth-banner": "\n      <b>Enter your API Key first so the page can load data</b><br>\n      <span style=\"color:var(--muted)\">\n        The API Key is this service's own \"access password\". It stops other people from using your Muse account quota.\n        It is <b style=\"color:var(--text)\">not</b> your Muse password. It is a random string generated at deploy time (it starts with <code>m2a_</code>).<br>\n        Paste it into the box at the top right and click \"Save\". Your browser remembers it, so you won't need to enter it again.\n      </span>\n    ",
   "model-names-hint": "\n        Model names: <code>muse-spark</code> (chat/code), <code>muse-image</code> (images), <code>muse-video</code> (videos).\n        See the \"Integration Docs\" tab for full examples.\n      ",
@@ -1524,6 +1555,7 @@ function goTab(name){
 }
 document.querySelectorAll('nav.tabs button').forEach(b => {
   b.onclick = () => {
+    closeMediaPreview();
     document.querySelectorAll('nav.tabs button').forEach(x => x.classList.remove('active'));
     document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
     b.classList.add('active');
@@ -1969,15 +2001,17 @@ async function loadTasks(){
     $('taskBody').innerHTML = ts.map(t => {
       const cls = (t.status === 'succeeded' || t.status === 'completed') ? 'ok' : t.status === 'failed' ? 'bad'
                 : t.status === 'processing' ? 'info' : 'warn';
+      const accountLabel = accounts.find(a => a.id === t.account)?.label;
+      const accountText = accountLabel ? accountLabel + ' (' + t.account + ')' : t.account;
       let out = '—';
       if (t.result && t.result.url) out = `<a href="${esc(t.result.url)}" target="_blank">查看结果</a> <span class="mono">${fmtBytes(t.result.bytes)}</span>`;
       else if (t.error) out = `<span style="color:var(--bad)">${esc(t.error).slice(0,120)}</span>`;
       return `<tr>
-        <td class="mono">${esc(t.id)}</td>
+        <td class="mono">${esc(t.id)}${t.account ? `<br><small>${esc(accountText)} · #${t.attempt || 1}</small>` : ''}</td>
         <td>${t.kind === 'video' ? '<span class="badge info">视频</span>' : '<span class="badge info">图片</span>'}</td>
         <td><span class="ellip" title="${esc(t.prompt)}">${esc(t.prompt)}</span></td>
         <td><span class="badge ${cls}">${esc(t.status)}</span></td>
-        <td class="mono">${t.elapsed ? t.elapsed + 's' : '—'}</td>
+        <td class="mono">${taskDuration(t)}</td>
         <td class="mono">${fmtTime(t.created_at)}</td>
         <td>${out}</td>
         <td><button class="danger mini" onclick="delTask('${t.id}')">删</button></td>
@@ -2002,6 +2036,49 @@ async function clearTasks(){
 /* ================= 媒体库 ================= */
 let _allMedia = [];
 let _selectedMedia = new Set();
+
+function releaseMediaPlayer(){
+  const video = $('mediaPlayer').querySelector('video');
+  if (video){
+    video.pause();
+    video.removeAttribute('src');
+    video.load();
+  }
+  $('mediaPlayer').replaceChildren();
+}
+
+function closeMediaPreview(){
+  releaseMediaPlayer();
+  if ($('mediaDialog').open) $('mediaDialog').close();
+}
+
+$('mediaDialog').addEventListener('close', releaseMediaPlayer);
+$('mediaDialog').addEventListener('click', e => {
+  if (e.target === $('mediaDialog')) closeMediaPreview();
+});
+
+function openMediaPreview(name){
+  const media = _allMedia.find(m => m.name === name && m.kind === 'video');
+  if (!media) return;
+  releaseMediaPlayer();
+  $('mediaPreviewTitle').textContent = name;
+  const video = document.createElement('video');
+  video.controls = true;
+  video.playsInline = true;
+  video.preload = 'none';
+  // The original video URL is assigned only after an explicit click.
+  video.src = media.url;
+  $('mediaPlayer').appendChild(video);
+  if (!$('mediaDialog').open) $('mediaDialog').showModal();
+  video.play().catch(() => {}); // Controls remain available if autoplay is blocked.
+}
+
+$('mediaGrid').addEventListener('click', e => {
+  const trigger = e.target.closest('[data-play-video]');
+  if (!trigger || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+  e.preventDefault();
+  openMediaPreview(trigger.closest('.tile').dataset.name);
+});
 
 function updateMediaSelectionUI(){
   const count = _selectedMedia.size;
@@ -2092,6 +2169,7 @@ async function delSelectedMedia(){
 }
 
 async function loadMedia(){
+  closeMediaPreview();
   try{
     const d = await api('/admin/media');
     const ms = d.media || [];
@@ -2114,14 +2192,17 @@ async function loadMedia(){
         <label class="check-tag" title="勾选以批量操作" onclick="event.stopPropagation()">
           <input type="checkbox" class="tile-check" ${isSel ? 'checked' : ''} onchange="toggleMediaSelect('${esc(m.name)}')">
         </label>
-        <div class="thumb">${m.kind === 'video'
-          ? `<video src="${esc(m.url)}" muted playsinline preload="metadata"></video>`
-          : `<img src="${esc(m.url)}" loading="lazy" alt="">`}</div>
+        ${m.kind === 'video'
+          ? `<button type="button" class="thumb" data-play-video aria-label="播放视频" title="播放视频">
+              ${m.thumbnail_url ? `<img src="${esc(m.thumbnail_url)}" loading="lazy" decoding="async" alt="" onerror="this.hidden=true">` : ''}
+              <span class="play-icon" aria-hidden="true">▶</span>
+            </button>`
+          : `<div class="thumb"><img src="${esc(m.url)}" loading="lazy" alt=""></div>`}
         <div class="meta">
           <div class="nm" title="${esc(m.name)}">${esc(m.name)}</div>
           <div style="margin-top:3px">${fmtBytes(m.bytes)} · ${fmtTime(m.mtime)}</div>
           <div class="ac">
-            <a class="badge info" href="${esc(m.url)}" target="_blank">打开</a>
+            <a class="badge info" href="${esc(m.url)}" target="_blank" ${m.kind === 'video' ? 'data-play-video' : ''}>打开</a>
             <a class="badge mute" href="${esc(m.url)}" download>下载</a>
             <a class="badge bad" href="javascript:void(0)" onclick="delSingleMedia('${esc(m.name)}')">删除</a>
           </div>
@@ -2232,34 +2313,12 @@ function dismissUpdateBanner(){
 async function loadRepoStatus(force){
   try{
     let s = await api('/admin/update/check' + (force ? '?force=true' : ''));
-    // 若服务端网络无法直连 GitHub API，则由用户浏览器端直接请求 GitHub API 兜底检测
-    if (!s.remote_sha){
-      try{
-        const gr = await fetch('https://api.github.com/repos/Jozapi/muse2api/commits?sha=main&per_page=5');
-        if (gr.ok){
-          const commits = await gr.json();
-          if (Array.isArray(commits) && commits.length){
-            s.remote_sha = (commits[0].sha || '').slice(0, 7);
-            const rawMsg0 = ((commits[0].commit || {}).message || '').split('\n')[0];
-            s.remote_msg = /linux/i.test(rawMsg0) ? 'perf: optimize session keepalive and UI rendering' : rawMsg0;
-            s.recent_commits = commits.map(c => {
-              const m = ((c.commit || {}).message || '').split('\n')[0];
-              return {
-                sha: (c.sha || '').slice(0, 7),
-                message: /linux/i.test(m) ? 'perf: optimize session keepalive and UI rendering' : m,
-                date: ((c.commit || {}).committer || {}).date || '',
-                url: c.html_url || 'https://github.com/Jozapi/muse2api'
-              };
-            });
-            if (s.local_sha && s.remote_sha && s.local_sha !== s.remote_sha){
-              s.has_update = true;
-              s.up_to_date = false;
-            }
-          }
-        }
-      }catch(_){}
-    }
     _lastRepoStatus = s;
+    for (const id of ['repoHomeLink','repoPanelLink']) {
+      const link=$(id); if(link){link.href=s.repo_url;link.title=s.repo_url;}
+    }
+    if($('repoPanelLink')) $('repoPanelLink').textContent=s.repo_url.replace('https://github.com/','')+' ↗';
+    if($('repoCommitsLink')) $('repoCommitsLink').href=s.repo_url+'/commits/'+encodeURIComponent(s.repo_ref||'main');
     const badge = $('repoBadge');
     const topBtn = $('btnRepoTop');
     const desc = $('repoStatusDesc');
@@ -2268,31 +2327,27 @@ async function loadRepoStatus(force){
     const lVer = 'v' + (s.local_version || '1.5.0');
     const rVer = 'v' + (s.remote_version || s.local_version || '1.5.0');
 
-    if (s.has_update){
-      badge.className = 'badge warn';
-      badge.textContent = `🔔 发现新版本 ${rVer} (${s.remote_sha || 'latest'})`;
-      topBtn.classList.add('updpill-alert');
-      topBtn.innerHTML = `🔔 <span id="repoTopTxt">发现新更新 (${esc(s.remote_sha || rVer)})</span>`;
-      $('updBannerVer').textContent = `${lVer} (${s.local_sha || '旧版'}) → ${rVer} (${s.remote_sha || '最新'})`;
-      $('updBannerMsg').innerHTML = `最新仓库提交：<b>${esc(s.remote_msg || '性能优化与功能更新')}</b> · 点击右侧「⚡ 一键在线升级并重启」即可自动拉取更新（保留本地配置与账号数据）。`;
-      if (_dismissedSha !== s.remote_sha){
-        banner.classList.add('show');
-      }
-      if (_notifiedSha !== s.remote_sha && s.remote_sha){
-        _notifiedSha = s.remote_sha;
-        localStorage.setItem('muse2api_notified_sha', _notifiedSha);
-        toast(`🔔 官方仓库发布了新更新 (${s.remote_sha})：${s.remote_msg || '点击顶部一键升级'}`, 'warn');
-      }
-    } else {
-      badge.className = 'badge ok';
-      badge.textContent = `✓ 已是最新 ${lVer} (${s.local_sha || 'main'})`;
-      topBtn.classList.remove('updpill-alert');
-      topBtn.innerHTML = `📦 <span id="repoTopTxt">${esc(lVer)} · 已是最新</span>`;
-      banner.classList.remove('show');
+    const state = LANG === 'en'
+      ? (s.has_update ? 'Update available' : s.up_to_date === true ? 'Up to date' : 'Version status unconfirmed')
+      : (s.has_update ? '有更新' : s.up_to_date === true ? '已是最新' : '版本状态待确认');
+    badge.className = 'badge ' + (s.has_update ? 'warn' : s.up_to_date === true ? 'ok' : 'mute');
+    badge.textContent = `${state} · ${lVer} (${s.local_sha || 'unknown'})`;
+    topBtn.classList.toggle('updpill-alert', !!s.has_update);
+    topBtn.innerHTML = `📦 <span id="repoTopTxt">${esc(lVer)} · ${esc(state)}</span>`;
+    const bannerHighlights = LANG === 'en' ? (s.highlights_en || s.highlights) : s.highlights;
+    $('updBannerVer').textContent = rVer + ' (' + (s.remote_sha || 'unknown') + ')';
+    $('updBannerMsg').textContent = s.managed_deployment
+      ? (LANG === 'en' ? 'Rebuild and switch the configured image to update.' : '请从配置的仓库分支重建并切换镜像。')
+      : ((bannerHighlights || [])[0] || s.remote_msg || state);
+    banner.classList.toggle('show', !!s.has_update && !!s.remote_sha && s.remote_sha !== _dismissedSha);
+    desc.innerHTML = `${LANG === 'en' ? 'Installed version: ' : '当前已部署版本：'}<code>${esc(lVer)}</code>（Commit: <code>${esc(s.local_sha || '—')}</code>） · ` +
+      `${LANG === 'en' ? 'Update source: ' : '更新来源：'}<a href="${esc(s.repo_url)}" target="_blank">${esc(s.repo_url)}</a> / <code>${esc(s.repo_ref || 'main')}</code><br>` +
+      `${LANG === 'en' ? 'Remote version: ' : '远端版本：'}<code>${esc(s.remote_version || '未知')}</code>（Commit: <code>${esc(s.remote_sha || '—')}</code>）` +
+      (s.check_error ? `<br>${esc(s.check_error)}` : '') +
+      (s.managed_deployment ? '<br>此实例通过镜像部署，更新需从上述分支构建并切换容器。' : '');
+    for (const id of ['btnRepoPull', 'btnBannerUpgrade']) {
+      const btn = $(id); if (btn) btn.disabled = !!s.managed_deployment;
     }
-
-    desc.innerHTML = `当前已部署版本：<code>${esc(lVer)}</code>（Commit: <code>${esc(s.local_sha || '—')}</code>） · ` +
-      `GitHub 官方仓库最新：<code>${esc(rVer)}</code>（Commit: <code>${esc(s.remote_sha || '—')}</code> <span>${esc(s.remote_msg || '')}</span>）`;
 
     let html = '';
     const highlights = (LANG === 'en' && Array.isArray(s.highlights_en) && s.highlights_en.length) ? s.highlights_en : s.highlights;
@@ -2307,14 +2362,18 @@ async function loadRepoStatus(force){
         ).join('') + `</div></div>`;
     }
     if (box) box.innerHTML = html || '<span style="color:var(--muted)">暂无提交记录</span>';
-    if (force) toast(s.has_update ? '🔔 检测到新版本更新！' : '✓ 当前已是官方仓库最新版本', s.has_update ? 'warn' : 'ok');
+    if (force) toast(state, s.up_to_date === true ? 'ok' : 'warn');
   }catch(e){
     if ($('repoBadge')) { $('repoBadge').className = 'badge mute'; $('repoBadge').textContent = '待鉴权'; }
   }
 }
 
 async function upgradeNow(){
-  if (!confirm('确定立即从 GitHub 官方仓库 (Jozapi/muse2api) 拉取最新代码并自动重启服务吗？\n\n（注：本地 .env 密钥、账号池 Cookie 和已生成的媒体文件均会自动保留，不受任何影响）')) return;
+  if (_lastRepoStatus?.managed_deployment) return toast('此实例通过镜像部署，请从配置的仓库分支更新容器', 'warn');
+  const upgradePrompt = (LANG === 'en' ? 'Update and restart from ' : '确定从 ')
+    + (_lastRepoStatus?.repo_url || '') + ' / ' + (_lastRepoStatus?.repo_ref || 'main')
+    + (LANG === 'en' ? '?' : ' 更新并重启服务吗？');
+  if (!confirm(upgradePrompt)) return;
   const btn1 = $('btnRepoPull'), btn2 = $('btnBannerUpgrade');
   if (btn1) { btn1.disabled = true; btn1.innerHTML = '<span class="spin"></span>正在在线更新…'; }
   if (btn2) { btn2.disabled = true; btn2.innerHTML = '<span class="spin"></span>正在在线更新…'; }
@@ -2340,10 +2399,34 @@ async function upgradeNow(){
   }
 }
 
+let generationQueueLoaded = false;
+function renderGenerationQueue(settings, config) {
+  if (!settings) return;
+  if (!generationQueueLoaded) { $('generationQueueTimeout').value = settings.queue_timeout; generationQueueLoaded = true; }
+  $('generationQueueSummary').textContent = LANG === 'en'
+    ? `Execution budget: video ${config.video_timeout}s · image ${config.image_timeout}s`
+    : `实际生成时限：视频 ${config.video_timeout} 秒 · 图片 ${config.image_timeout} 秒`;
+}
+async function saveGenerationQueue() {
+  if (!$('generationQueueForm').reportValidity()) return;
+  const button=$('generationQueueSave');button.disabled=true;
+  try { await api('/admin/generation-queue',{method:'PUT',body:JSON.stringify({queue_timeout:Number($('generationQueueTimeout').value)})}); generationQueueLoaded=false;await loadStatus();toast('排队设置已保存','ok'); }
+  catch(e){toast(e.message,'bad');}finally{button.disabled=false;}
+}
+function taskDuration(task) {
+  if (task.total_elapsed == null && task.queue_elapsed == null) return task.elapsed ? `${task.elapsed}s` : '—';
+  const total = task.total_elapsed ?? Math.max(0, Date.now()/1000 - task.created_at);
+  const queue = task.status === 'queued' ? total : task.queue_elapsed || 0;
+  const generation = task.elapsed ?? (task.status === 'processing' ? Math.max(0, total - queue) : 0);
+  return `${LANG === 'en' ? 'Queue' : '排队'} ${queue.toFixed(1)}s<br>${LANG === 'en' ? 'Generate' : '生成'} ${generation.toFixed(1)}s<br>${LANG === 'en' ? 'Total' : '总计'} ${total.toFixed(1)}s`;
+}
+
+
 /* ================= 总览刷新 ================= */
 async function loadStatus(){
   try{
     const d = await api('/admin/status');
+    renderGenerationQueue(d.generation_queue, d.config);
     $('pSvc').className = 'pill on';
     $('pSvc').innerHTML = '<span class="led"></span>服务 <b>正常</b>';
     $('pBr').className = 'pill ' + (d.browser_running ? 'on' : 'off');
